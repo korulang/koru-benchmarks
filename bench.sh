@@ -64,7 +64,7 @@ for kdir in "$SUITE"/koru/*/; do
       if [ "$actual" = "$oracle" ]; then
         hyperfine -N --input "$STDIN0" --warmup "$WARMUP" --min-runs "$MINRUNS" \
           --export-json "$TMP/hf.json" "$bin" >/dev/null 2>&1 \
-          && ms[$lang]="$(python3 -c 'import json,sys; print(f"{json.load(open(sys.argv[1]))[\"results\"][0][\"mean\"]*1000:.1f}")' "$TMP/hf.json" 2>/dev/null)" \
+          && ms[$lang]="$(python3 -c 'import json,sys; print("%.1f" % (json.load(open(sys.argv[1]))["results"][0]["mean"]*1000))' "$TMP/hf.json" 2>/dev/null)" \
           || ms[$lang]="hf-err"
       else
         ms[$lang]="WRONG"   # built but wrong answer — excluded from timing
