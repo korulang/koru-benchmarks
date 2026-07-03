@@ -5,5 +5,5 @@ import std/io
 
 capture { acc: 1[i64] }
 ! as a |> for(1..10000001)
-    ! each i |> captured { acc: @mod(a.acc * @as(i64, @intCast(i)), 1000000007) }
+    ! each i |> captured { acc: @rem(a.acc * @as(i64, @intCast(i)), 1000000007) }
 | captured r |> std/io:print.ln("{{ r.acc:d }}")

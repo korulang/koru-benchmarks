@@ -24,6 +24,6 @@ is-odd = if(n == 0)
 
 capture { acc: 0[i64] }
 ! as s |> for(1..130000)
-    ! each i |> is-even(n: @mod(@as(i64, @intCast(i)), 1000))
+    ! each i |> is-even(n: @rem(@as(i64, @intCast(i)), 1000))
         | value e |> captured { acc: s.acc + e }
 | captured r |> std/io:print.ln("{{ r.acc:d }}")

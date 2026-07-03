@@ -7,5 +7,5 @@ import std/io
 
 capture { acc: 0[i64] }
 ! as a |> for(2..10000001)
-    ! each i |> captured { acc: @mod(a.acc + 7, @as(i64, @intCast(i))) }
+    ! each i |> captured { acc: @rem(a.acc + 7, @as(i64, @intCast(i))) }
 | captured r |> std/io:print.ln("{{ r.acc:d }}")

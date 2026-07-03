@@ -9,7 +9,7 @@ pub event gcd { a: i64, b: i64 }
 
 gcd = if(b == 0)
 | then => value a
-| else |> gcd(a: b, b: @mod(a, b))
+| else |> gcd(a: b, b: @rem(a, b))
     | value v => value v
 
 capture { acc: 0[i64] }

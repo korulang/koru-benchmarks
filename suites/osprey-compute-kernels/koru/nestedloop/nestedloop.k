@@ -17,7 +17,7 @@ pub event loop-k { i: i64, j: i64, k: i64, acc: i64 }
 
 loop-k = if(k == 0)
 | then => value acc
-| else |> loop-k(i, j, k: k - 1, acc: @mod(acc + i * j * k, 1000000007))
+| else |> loop-k(i, j, k: k - 1, acc: @rem(acc + i * j * k, 1000000007))
     | value v => value v
 
 pub event loop-j { i: i64, j: i64, n: i64, acc: i64 }

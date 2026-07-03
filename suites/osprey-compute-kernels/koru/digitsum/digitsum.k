@@ -11,7 +11,7 @@ pub event digit-sum { n: i64 }
 digit-sum = if(n < 10)
 | then => value n
 | else |> digit-sum(n: @divTrunc(n, 10))
-    | value v => value @mod(n, 10) + v
+    | value v => value @rem(n, 10) + v
 
 capture { acc: 0[i64] }
 ! as a |> for(1..2000001)
