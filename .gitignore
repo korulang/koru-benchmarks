@@ -1,0 +1,23 @@
+# Koru / Zig build artifacts (koruc clobbers its CWD; the runner builds in tmp,
+# but guard against stray artifacts if anyone builds a kernel in place).
+a.out
+*.o
+output_emitted.zig
+backend_output_emitted.zig
+backend.zig
+build_backend.zig
+build_output.zig
+build.zig
+build.zig.zon
+compiler_env.zig
+program_ast.zig
+program.ast.json
+.zig-cache/
+zig-out/
+build.log
+
+# Osprey reference-harness outputs (its own run.sh writes here)
+suites/*/reference/results/
+
+# OS cruft
+.DS_Store
