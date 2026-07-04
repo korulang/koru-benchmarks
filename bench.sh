@@ -26,10 +26,12 @@ STDIN0="$TMP/mode0"; printf '0\n' > "$STDIN0"   # Osprey feeds a constant seed l
 ROWS="$TMP/rows.tsv"; : > "$ROWS"               # kernel<TAB>lang<TAB>status<TAB>mean_ms<TAB>stddev_ms — feeds results/latest.json
 
 have() { command -v "$1" >/dev/null 2>&1; }
+OSPREY="${OSPREY:-$(command -v osprey || true)}"
 echo "Machine: $(uname -sm) · koruc: $KORUC"
 printf 'Toolchains: koru=present  c=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have rustc && echo present || echo ABSENT)" \
-  "$(have ghc && echo present || echo ABSENT)" "$(have ocamlopt && echo present || echo ABSENT)" "ABSENT"
+  "$(have ghc && echo present || echo ABSENT)" "$(have ocamlopt && echo present || echo ABSENT)" \
+  "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)"
 
 # build_lang <lang> <name> <out>  -> 0 on success (binary at <out>), 1 otherwise
 build_lang() {
@@ -43,13 +45,24 @@ build_lang() {
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
     haskell) have ghc    && [ -f "$cdir/$name.hs" ] && ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$cdir/$name.hs" >/dev/null 2>&1 ;;
+    # ocaml/osprey build commands mirror the vendored reference/osprey_run.sh
+    # exactly (their own harness's flags), compiled from a copy because both
+    # litter artifacts beside the source.
+    ocaml)
+      have ocamlopt && [ -f "$cdir/$name.ml" ] || return 1
+      local mw="$TMP/ml_$name"; rm -rf "$mw"; mkdir -p "$mw"; cp "$cdir/$name.ml" "$mw/"
+      ( cd "$mw" && ocamlopt -O3 -unsafe -o "$out" "$name.ml" >/dev/null 2>&1 ) ;;
+    osprey)
+      [ -n "$OSPREY" ] && [ -x "$OSPREY" ] && [ -f "$cdir/$name.osp" ] || return 1
+      local ow="$TMP/osp_$name"; rm -rf "$ow"; mkdir -p "$ow"; cp "$cdir/$name.osp" "$ow/"
+      ( cd "$ow" && "$OSPREY" "$name.osp" --compile >/dev/null 2>&1 ) && [ -x "$ow/$name" ] && mv -f "$ow/$name" "$out" ;;
     *) return 1 ;;
   esac
 }
 
-LANGS=(koru c rust haskell)
-printf '%-12s %10s %10s %10s %10s\n' kernel koru c rust haskell
-printf '%-12s %10s %10s %10s %10s\n' "------" "----" "-" "----" "-------"
+LANGS=(koru c rust haskell ocaml osprey)
+printf '%-12s %10s %10s %10s %10s %10s %10s\n' kernel koru c rust haskell ocaml osprey
+printf '%-12s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "-------" "-----" "------"
 
 for kdir in "$SUITE"/koru/*/; do
   name="$(basename "$kdir")"
@@ -85,8 +98,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}"
   unset ms
 done
 
@@ -113,6 +126,8 @@ if [ -z "$FILTER" ]; then
   CC_VERSION="$(cc --version 2>/dev/null | head -1 || echo ABSENT)" \
   RUSTC_VERSION="$(rustc --version 2>/dev/null || echo ABSENT)" \
   GHC_VERSION="$(ghc --numeric-version 2>/dev/null | sed 's/^/ghc /' || echo ABSENT)" \
+  OCAML_VERSION="$(ocamlopt -version 2>/dev/null | sed 's/^/ocamlopt /' || echo ABSENT)" \
+  OSPREY_VERSION="$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && ("$OSPREY" --version 2>/dev/null | head -1 || echo "osprey (version unknown)") || echo ABSENT)" \
   python3 - <<'PYEOF'
 import json, os
 
@@ -143,14 +158,16 @@ out = {
             "c": "cc -O2",
             "rust": "rustc -C opt-level=3 -C overflow-checks=off",
             "haskell": "ghc -O2",
+            "ocaml": "ocamlopt -O3 -unsafe",
+            "osprey": "osprey --compile (release)",
         },
     },
     "toolchains": {
         "c": os.environ["CC_VERSION"],
         "rust": os.environ["RUSTC_VERSION"],
         "haskell": os.environ["GHC_VERSION"],
-        "ocaml": "ABSENT",
-        "osprey": "ABSENT",
+        "ocaml": os.environ["OCAML_VERSION"],
+        "osprey": os.environ["OSPREY_VERSION"],
     },
     "discipline": "MEASURED on the machine named above, not a quiesced rig. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
     "langs": langs_seen,

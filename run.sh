@@ -44,7 +44,10 @@ while IFS= read -r kfile; do
   cp "$kfile" "$work/$(basename "$kfile")"
   if ( cd "$work" && timeout "$TIMEOUT" "$KORUC" build "$(basename "$kfile")" >build.log 2>&1 ) \
      && [ -x "$work/a.out" ]; then
-    actual="$( cd "$work" && timeout "$TIMEOUT" ./a.out 2>/dev/null | sed 's/[[:space:]]*$//' )"
+    # Osprey's harness feeds every kernel a constant mode line on stdin;
+    # mirror it so stdin-reading kernels (textstats, wordfreq) can't hang
+    # the gate and self-contained ones are unaffected.
+    actual="$( cd "$work" && printf '0\n' | timeout "$TIMEOUT" ./a.out 2>/dev/null | sed 's/[[:space:]]*$//' )"
     if [ "$actual" = "$expected" ]; then
       printf '  \033[32m✓ PASS\033[0m  %-14s %s\n' "$name" "$actual"
       pass=$((pass+1))
