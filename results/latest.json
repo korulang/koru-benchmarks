@@ -1,0 +1,172 @@
+{
+  "suite": "osprey-compute-kernels",
+  "generated_at": "2026-07-04T20:56:50Z",
+  "machine": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2 Pro"
+  },
+  "koru": {
+    "commit": "e478834a",
+    "dirty": true
+  },
+  "protocol": {
+    "tool": "hyperfine -N",
+    "warmup": 3,
+    "min_runs": 10,
+    "flags": {
+      "koru": "koruc build (ReleaseFast)",
+      "c": "cc -O2",
+      "rust": "rustc -C opt-level=3 -C overflow-checks=off",
+      "haskell": "ghc -O2"
+    }
+  },
+  "toolchains": {
+    "c": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
+    "rust": "rustc 1.96.0-nightly (b41f22de2 2026-03-08)",
+    "haskell": "ghc 9.10.3",
+    "ocaml": "ABSENT",
+    "osprey": "ABSENT"
+  },
+  "discipline": "MEASURED on the machine named above, not a quiesced rig. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
+  "langs": [
+    "koru",
+    "c",
+    "rust",
+    "haskell"
+  ],
+  "kernels": {
+    "digitsum": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 7.97,
+        "stddev_ms": 1.37
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 6.93,
+        "stddev_ms": 0.38
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 7.11,
+        "stddev_ms": 0.33
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 42.56,
+        "stddev_ms": 1.43
+      }
+    },
+    "factorial": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 42.85,
+        "stddev_ms": 0.46
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 45.02,
+        "stddev_ms": 11.34
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 44.04,
+        "stddev_ms": 1.44
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 66.62,
+        "stddev_ms": 1.89
+      }
+    },
+    "gcdsum": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 89.36,
+        "stddev_ms": 0.74
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 89.71,
+        "stddev_ms": 0.69
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 90.84,
+        "stddev_ms": 0.94
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 125.64,
+        "stddev_ms": 2.26
+      }
+    },
+    "josephus": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 37.89,
+        "stddev_ms": 0.55
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 38.1,
+        "stddev_ms": 0.63
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 38.33,
+        "stddev_ms": 0.54
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 54.8,
+        "stddev_ms": 1.56
+      }
+    },
+    "mutual": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 17.74,
+        "stddev_ms": 0.68
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 18.42,
+        "stddev_ms": 0.87
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 18.85,
+        "stddev_ms": 1.1
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 44.87,
+        "stddev_ms": 3.93
+      }
+    },
+    "nestedloop": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 56.68,
+        "stddev_ms": 1.32
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 56.69,
+        "stddev_ms": 0.85
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 56.93,
+        "stddev_ms": 0.52
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 78.91,
+        "stddev_ms": 2.62
+      }
+    }
+  }
+}

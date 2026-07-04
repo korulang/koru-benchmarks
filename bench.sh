@@ -23,6 +23,7 @@ command -v hyperfine >/dev/null 2>&1 || { echo "hyperfine not installed — requ
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 STDIN0="$TMP/mode0"; printf '0\n' > "$STDIN0"   # Osprey feeds a constant seed line; harmless for self-contained kernels
+ROWS="$TMP/rows.tsv"; : > "$ROWS"               # kernel<TAB>lang<TAB>status<TAB>mean_ms<TAB>stddev_ms — feeds results/latest.json
 
 have() { command -v "$1" >/dev/null 2>&1; }
 echo "Machine: $(uname -sm) · koruc: $KORUC"
@@ -62,15 +63,26 @@ for kdir in "$SUITE"/koru/*/; do
     if build_lang "$lang" "$name" "$bin"; then
       actual="$("$bin" <"$STDIN0" 2>/dev/null | tr -d '[:space:]')"
       if [ "$actual" = "$oracle" ]; then
-        hyperfine -N --input "$STDIN0" --warmup "$WARMUP" --min-runs "$MINRUNS" \
-          --export-json "$TMP/hf.json" "$bin" >/dev/null 2>&1 \
-          && ms[$lang]="$(python3 -c 'import json,sys; print("%.1f" % (json.load(open(sys.argv[1]))["results"][0]["mean"]*1000))' "$TMP/hf.json" 2>/dev/null)" \
-          || ms[$lang]="hf-err"
+        if hyperfine -N --input "$STDIN0" --warmup "$WARMUP" --min-runs "$MINRUNS" \
+             --export-json "$TMP/hf.json" "$bin" >/dev/null 2>&1; then
+          mean_ms=""; std_ms=""
+          read -r mean_ms std_ms < <(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"][0]; print("%.2f %.2f" % (r["mean"]*1000, r["stddev"]*1000))' "$TMP/hf.json" 2>/dev/null) || true
+          if [ -n "${mean_ms:-}" ]; then
+            ms[$lang]="$(printf '%.1f' "$mean_ms")"
+            printf '%s\t%s\tmeasured\t%s\t%s\n' "$name" "$lang" "$mean_ms" "$std_ms" >> "$ROWS"
+          else
+            ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\n' "$name" "$lang" >> "$ROWS"
+          fi
+        else
+          ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\n' "$name" "$lang" >> "$ROWS"
+        fi
       else
         ms[$lang]="WRONG"   # built but wrong answer — excluded from timing
+        printf '%s\t%s\twrong\t\t\n' "$name" "$lang" >> "$ROWS"
       fi
     else
       ms[$lang]="—"          # toolchain/source absent or build failed
+      printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
   printf '%-12s %10s %10s %10s %10s\n' "$name" \
@@ -81,3 +93,72 @@ done
 echo
 echo "Values are mean wall-clock milliseconds (hyperfine -N, warmup $WARMUP, min-runs $MINRUNS) on this machine."
 echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but failed the oracle (excluded)."
+
+# Persist the board as a provenance-carrying artifact (results/latest.json).
+# Only a FULL run writes it — a filtered run is a partial board and must never
+# masquerade as the whole one.
+if [ -z "$FILTER" ]; then
+  cpu=""
+  case "$(uname -s)" in
+    Darwin) cpu="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)" ;;
+    Linux)  cpu="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || true)" ;;
+  esac
+  koru_repo="$(cd "$(dirname "$KORUC")/../.." 2>/dev/null && pwd)"
+  koru_commit="$(git -C "$koru_repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  koru_dirty="$(git -C "$koru_repo" status --porcelain 2>/dev/null | grep -q . && echo true || echo false)"
+  mkdir -p "$ROOT/results"
+  ROWS_FILE="$ROWS" OUT_FILE="$ROOT/results/latest.json" \
+  GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" OS="$(uname -s)" ARCH="$(uname -m)" CPU="$cpu" \
+  KORU_COMMIT="$koru_commit" KORU_DIRTY="$koru_dirty" WARMUP="$WARMUP" MINRUNS="$MINRUNS" \
+  CC_VERSION="$(cc --version 2>/dev/null | head -1 || echo ABSENT)" \
+  RUSTC_VERSION="$(rustc --version 2>/dev/null || echo ABSENT)" \
+  GHC_VERSION="$(ghc --numeric-version 2>/dev/null | sed 's/^/ghc /' || echo ABSENT)" \
+  python3 - <<'PYEOF'
+import json, os
+
+rows = {}
+langs_seen = []
+for line in open(os.environ["ROWS_FILE"]):
+    parts = line.rstrip("\n").split("\t")
+    kernel, lang, status, mean, std = (parts + ["", ""])[:5]
+    cell = {"status": status}
+    if status == "measured":
+        cell["mean_ms"] = float(mean)
+        cell["stddev_ms"] = float(std)
+    rows.setdefault(kernel, {})[lang] = cell
+    if lang not in langs_seen:
+        langs_seen.append(lang)
+
+out = {
+    "suite": "osprey-compute-kernels",
+    "generated_at": os.environ["GENERATED_AT"],
+    "machine": {"os": os.environ["OS"], "arch": os.environ["ARCH"], "cpu": os.environ["CPU"]},
+    "koru": {"commit": os.environ["KORU_COMMIT"], "dirty": os.environ["KORU_DIRTY"] == "true"},
+    "protocol": {
+        "tool": "hyperfine -N",
+        "warmup": int(os.environ["WARMUP"]),
+        "min_runs": int(os.environ["MINRUNS"]),
+        "flags": {
+            "koru": "koruc build (ReleaseFast)",
+            "c": "cc -O2",
+            "rust": "rustc -C opt-level=3 -C overflow-checks=off",
+            "haskell": "ghc -O2",
+        },
+    },
+    "toolchains": {
+        "c": os.environ["CC_VERSION"],
+        "rust": os.environ["RUSTC_VERSION"],
+        "haskell": os.environ["GHC_VERSION"],
+        "ocaml": "ABSENT",
+        "osprey": "ABSENT",
+    },
+    "discipline": "MEASURED on the machine named above, not a quiesced rig. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
+    "langs": langs_seen,
+    "kernels": rows,
+}
+with open(os.environ["OUT_FILE"], "w") as f:
+    json.dump(out, f, indent=2)
+    f.write("\n")
+print(f"\nBoard persisted: {os.environ['OUT_FILE']}")
+PYEOF
+fi
