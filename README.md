@@ -74,6 +74,25 @@ local path (Docker already builds Osprey from source). Osprey is by Christian
 Findlay / Nimblesite ([source](https://github.com/Nimblesite/osprey)); its own
 published benchmark board lives at <https://www.ospreylang.dev/benchmarks/>.
 
+### Board-worthy timing — a quiet, dedicated box
+
+Wall-clock from a shared/loaded dev machine is **ballpark only** (the results
+artifact records `load_avg` for exactly this reason). A number that leaves the
+room needs a quiet host with a dedicated CPU. Two pieces, both already here:
+
+- **`docker/Dockerfile`** — the reproducible environment (all reference
+  toolchains + koruc from `KORU_REF`). Reproducible *environment*, not stable
+  *timing*.
+- **`scripts/bench-on-droplet.sh`** — rents a CPU-Optimized (dedicated-vCPU)
+  DigitalOcean droplet, runs that image on it, pulls `results/latest.json` back
+  to `results/droplet/`, and destroys the droplet. Dedicated vCPU is the stable
+  *timing*. Needs `doctl auth init` first.
+
+**DO droplets are x86_64** — this yields an **x86_64/SysV-ABI board, a separate
+column from the M2 (ARM64) board; never merge the two.** No cross-language
+"beats / matches" claim leaves either board unless re-run under the target's
+exact rules on that same machine.
+
 ## Status
 
 First light. One suite is landing:
