@@ -25,7 +25,7 @@ ARG RUST_VERSION=stable
 # cc (gcc), ghc, ocamlopt, hyperfine, python3. LLVM/clang + make for Osprey.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl xz-utils git make build-essential \
-        ghc ocaml hyperfine python3 \
+        ghc ocaml python3 \
         llvm clang \
         libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -50,6 +50,20 @@ RUN set -eux; \
     rm /tmp/zig.tar.xz; \
     ln -s /opt/zig/zig /usr/local/bin/zig; \
     zig version
+
+# hyperfine from upstream release — Debian bookworm's apt build is 1.15, which
+# predates the `-N` / --shell=none flag the board protocol uses (added 1.16);
+# with the old build EVERY timing errors out (the whole board comes back
+# hf-err). Pin a current binary, same pattern as zig.
+ARG HF_VERSION=1.19.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) hfarch=x86_64 ;; arm64) hfarch=aarch64 ;; *) echo "unsupported arch: $arch" >&2; exit 1 ;; esac; \
+    curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HF_VERSION}/hyperfine-v${HF_VERSION}-${hfarch}-unknown-linux-gnu.tar.gz" -o /tmp/hf.tgz; \
+    tar -xzf /tmp/hf.tgz -C /tmp; \
+    mv "/tmp/hyperfine-v${HF_VERSION}-${hfarch}-unknown-linux-gnu/hyperfine" /usr/local/bin/hyperfine; \
+    rm -rf /tmp/hf.tgz /tmp/hyperfine-v*; \
+    hyperfine --version
 
 # Osprey from source (github.com/Nimblesite/osprey, MIT) — completes the
 # reference board's osprey column. `make build` = C runtime archives +
