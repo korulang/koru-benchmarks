@@ -6,7 +6,9 @@ nothing here is on the regression board.
 
 ## Source
 
-- Repo: `https://github.com/Nimblesite/osprey` (the Osprey language, by Christian Findlay / Nimblesite)
+- Language: Osprey, by Christian Findlay / Nimblesite — https://www.ospreylang.dev
+  (their own published benchmark board: https://www.ospreylang.dev/benchmarks/)
+- Repo: `https://github.com/Nimblesite/osprey`
 - Commit: `79989f21317785b7e7870968a1facaf0a50bea13` (2026-07-01)
 - Path in source: `benchmarks/`
 - License: MIT — see `LICENSE.osprey` (copyright (c) 2025 Christian Findlay). The

@@ -26,7 +26,16 @@ STDIN0="$TMP/mode0"; printf '0\n' > "$STDIN0"   # Osprey feeds a constant seed l
 ROWS="$TMP/rows.tsv"; : > "$ROWS"               # kernel<TAB>lang<TAB>status<TAB>mean_ms<TAB>stddev_ms — feeds results/latest.json
 
 have() { command -v "$1" >/dev/null 2>&1; }
-OSPREY="${OSPREY:-$(command -v osprey || true)}"
+# Prefer an explicit OSPREY, then a sibling checkout (same convention as koruc),
+# then PATH. Homebrew's bottle currently ships a binary that cannot link the
+# C runtime outside the formula's layout — sibling `make build` is the honest path.
+if [ -z "${OSPREY:-}" ]; then
+  if [ -x "$ROOT/../osprey/target/release/osprey" ]; then
+    OSPREY="$ROOT/../osprey/target/release/osprey"
+  else
+    OSPREY="$(command -v osprey || true)"
+  fi
+fi
 echo "Machine: $(uname -sm) · koruc: $KORUC"
 printf 'Toolchains: koru=present  c=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have rustc && echo present || echo ABSENT)" \
@@ -111,10 +120,16 @@ echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but fai
 # Only a FULL run writes it — a filtered run is a partial board and must never
 # masquerade as the whole one.
 if [ -z "$FILTER" ]; then
-  cpu=""
+  cpu=""; loadavg=""; ncpu=""
   case "$(uname -s)" in
-    Darwin) cpu="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)" ;;
-    Linux)  cpu="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || true)" ;;
+    Darwin)
+      cpu="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+      loadavg="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1, $2, $3}')"
+      ncpu="$(sysctl -n hw.ncpu 2>/dev/null || true)" ;;
+    Linux)
+      cpu="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || true)"
+      loadavg="$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || true)"
+      ncpu="$(nproc 2>/dev/null || true)" ;;
   esac
   koru_repo="$(cd "$(dirname "$KORUC")/../.." 2>/dev/null && pwd)"
   koru_commit="$(git -C "$koru_repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -122,6 +137,7 @@ if [ -z "$FILTER" ]; then
   mkdir -p "$ROOT/results"
   ROWS_FILE="$ROWS" OUT_FILE="$ROOT/results/latest.json" \
   GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" OS="$(uname -s)" ARCH="$(uname -m)" CPU="$cpu" \
+  LOADAVG="$loadavg" NCPU="$ncpu" \
   KORU_COMMIT="$koru_commit" KORU_DIRTY="$koru_dirty" WARMUP="$WARMUP" MINRUNS="$MINRUNS" \
   CC_VERSION="$(cc --version 2>/dev/null | head -1 || echo ABSENT)" \
   RUSTC_VERSION="$(rustc --version 2>/dev/null || echo ABSENT)" \
@@ -147,7 +163,11 @@ for line in open(os.environ["ROWS_FILE"]):
 out = {
     "suite": "osprey-compute-kernels",
     "generated_at": os.environ["GENERATED_AT"],
-    "machine": {"os": os.environ["OS"], "arch": os.environ["ARCH"], "cpu": os.environ["CPU"]},
+    "machine": {
+        "os": os.environ["OS"], "arch": os.environ["ARCH"], "cpu": os.environ["CPU"],
+        "load_avg": os.environ.get("LOADAVG", "").strip(),   # 1/5/15-min load at persist time
+        "ncpu": int(os.environ["NCPU"]) if os.environ.get("NCPU", "").strip().isdigit() else None,
+    },
     "koru": {"commit": os.environ["KORU_COMMIT"], "dirty": os.environ["KORU_DIRTY"] == "true"},
     "protocol": {
         "tool": "hyperfine -N",
@@ -169,7 +189,7 @@ out = {
         "ocaml": os.environ["OCAML_VERSION"],
         "osprey": os.environ["OSPREY_VERSION"],
     },
-    "discipline": "MEASURED on the machine named above, not a quiesced rig. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
+    "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
     "langs": langs_seen,
     "kernels": rows,
 }

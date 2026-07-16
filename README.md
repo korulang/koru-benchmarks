@@ -58,17 +58,29 @@ suites/<suite>/
 ./run.sh                 # build every kernel through koruc, check against oracle
 ./run.sh josephus        # filter by name
 KORUC=/path/to/koruc ./run.sh
+
+./bench.sh               # perf board (Koru + reference langs, incl. Osprey)
+./bench.sh josephus      # filter by name
 ```
 
 `koruc` is located in the sibling `../koru` checkout by default (build it with
 `cd ../koru && zig build`), the same convention `korulang_org` uses.
+
+For the [Osprey](https://www.ospreylang.dev) column, `./bench.sh` prefers a
+sibling `../osprey` checkout (`cd ../osprey && make build` — binary at
+`target/release/osprey`), then `$OSPREY`, then PATH. Homebrew's bottle currently
+cannot link the C runtime outside its layout; the sibling build is the honest
+local path (Docker already builds Osprey from source). Osprey is by Christian
+Findlay / Nimblesite ([source](https://github.com/Nimblesite/osprey)); its own
+published benchmark board lives at <https://www.ospreylang.dev/benchmarks/>.
 
 ## Status
 
 First light. One suite is landing:
 
 - **`osprey-compute-kernels`** — 22 naive compute kernels (integer recursion,
-  folds, and data-structure stress) vendored from the Osprey benchmark suite.
+  folds, and data-structure stress) vendored from the
+  [Osprey benchmark suite](https://www.ospreylang.dev/benchmarks/).
   See its README for provenance and the honest board.
 
 The first kernel through the toolchain — `josephus` — is green (`1400177`), and

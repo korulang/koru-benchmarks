@@ -3,7 +3,10 @@
 22 naive compute kernels — integer recursion, folds, and data-structure stress —
 each ported to Koru and checked against an integer oracle. The reference
 implementations (five languages per kernel) and provenance live in `reference/`
-(see `PROVENANCE.md`; vendored MIT from the Osprey benchmark suite).
+(see `PROVENANCE.md`; vendored MIT from the
+[Osprey benchmark suite](https://www.ospreylang.dev/benchmarks/)). Osprey is a
+language by Christian Findlay / Nimblesite — <https://www.ospreylang.dev>
+([source](https://github.com/Nimblesite/osprey)).
 
 Faithful port: same naive algorithm, same parameters as the reference — no
 memoization, no SIMD, no algorithmic shortcut. `expected.txt` in each `koru/<name>/`
