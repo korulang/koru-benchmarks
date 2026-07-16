@@ -34,7 +34,10 @@ set -euo pipefail
 command -v doctl >/dev/null || { echo "doctl not found — install it and 'doctl auth init'." >&2; exit 2; }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-KORU_REF="${KORU_REF:-$(git -C "$ROOT/../koru" rev-parse --short HEAD 2>/dev/null || echo main)}"
+# A branch/tag name, NOT a SHA — the Dockerfile's `git clone --branch $KORU_REF`
+# only accepts refs. The ref must already be on origin (the image clones from
+# github). Default: the branch ../koru is currently on.
+KORU_REF="${KORU_REF:-$(git -C "$ROOT/../koru" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
 SIZE="${SIZE:-c-2}"
 REGION="${REGION:-nyc3}"
 NAME="${NAME:-koru-bench-$(date +%s)}"
@@ -50,6 +53,13 @@ esac
 SSH_KEY_ID="${SSH_KEY_ID:-$(doctl compute ssh-key list --no-header --format ID | head -1)}"
 [ -n "$SSH_KEY_ID" ] || { echo "No SSH key on your DO account — 'doctl compute ssh-key import'." >&2; exit 2; }
 
+# The matching LOCAL private key. A non-default filename must be passed with -i,
+# or ssh silently never offers it (→ "Permission denied" the wait loop can't
+# distinguish from a down sshd). Must correspond to SSH_KEY_ID on the account.
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/koru_bench}"
+[ -f "$SSH_KEY" ] || { echo "Local private key not found at $SSH_KEY — set SSH_KEY=/path matching DO key $SSH_KEY_ID." >&2; exit 2; }
+SSH="ssh -i $SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
 echo "▶ creating $SIZE droplet '$NAME' in $REGION (koru=$KORU_REF) …"
 ID="$(doctl compute droplet create "$NAME" \
         --size "$SIZE" --region "$REGION" --image docker-20-04 \
@@ -57,14 +67,21 @@ ID="$(doctl compute droplet create "$NAME" \
 trap '[ "${KEEP:-0}" = 1 ] || { echo "▶ destroying droplet $ID"; doctl compute droplet delete "$ID" -f; }' EXIT
 
 IP="$(doctl compute droplet get "$ID" --no-header --format PublicIPv4)"
-echo "▶ droplet $ID at $IP — waiting for SSH …"
-for _ in $(seq 1 30); do ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "root@$IP" true 2>/dev/null && break || sleep 5; done
+echo "▶ droplet $ID at $IP — waiting for SSH (marketplace cloud-init can take minutes) …"
+ok=0
+for i in $(seq 1 60); do
+  if $SSH -o ConnectTimeout=8 -o BatchMode=yes "root@$IP" true 2>/dev/null; then ok=1; break; fi
+  sleep 5
+done
+[ "$ok" = 1 ] || { echo "SSH never came up on $IP after ~5min — aborting (droplet will be destroyed)." >&2; exit 1; }
 
 # Provision + run: clone the suite, build the rig image pinned to KORU_REF, run
 # bench.sh with results mounted out, so latest.json lands on the droplet host.
 echo "▶ building rig + running bench.sh (this is the multi-minute part) …"
-ssh "root@$IP" bash -s <<EOF
+$SSH "root@$IP" bash -s <<EOF
 set -euo pipefail
+cloud-init status --wait || true   # let the Docker marketplace image finish installing docker
+command -v docker >/dev/null || { echo "docker not present after cloud-init" >&2; exit 1; }
 git clone --depth 1 https://github.com/korulang/koru-benchmarks /root/kb
 cd /root/kb
 mkdir -p results
@@ -76,5 +93,5 @@ EOF
 
 STAMP="$(date +%Y-%m-%d)_droplet_${SIZE}_koru-${KORU_REF}"
 mkdir -p "$ROOT/results/droplet"
-scp "root@$IP:/root/kb/results/latest.json" "$ROOT/results/droplet/${STAMP}.json"
+scp -i "$SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new "root@$IP:/root/kb/results/latest.json" "$ROOT/results/droplet/${STAMP}.json"
 echo "✓ results → results/droplet/${STAMP}.json  (x86_64 board — do NOT merge into the M2 board)"

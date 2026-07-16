@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl xz-utils git make build-essential \
         ghc ocaml hyperfine python3 \
         llvm clang \
+        libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust via rustup — Osprey's compiler is a Rust crate and apt's rustc is too
