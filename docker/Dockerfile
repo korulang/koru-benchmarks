@@ -54,12 +54,18 @@ RUN set -eux; \
 # Osprey from source (github.com/Nimblesite/osprey, MIT) — completes the
 # reference board's osprey column. `make build` = C runtime archives +
 # cargo build --release; binary lands at target/release/osprey.
+# Best-effort: Osprey is one OPTIONAL reference column. bench.sh reports a
+# missing toolchain as ABSENT (honest, never faked), so an Osprey build failure
+# must NOT sink the whole rig — the koru/c/rust/haskell board still stands.
 RUN set -eux; \
     git clone --depth 1 --branch "${OSPREY_REF}" https://github.com/Nimblesite/osprey /opt/osprey-src; \
     cd /opt/osprey-src; \
-    make build; \
-    ln -s /opt/osprey-src/target/release/osprey /usr/local/bin/osprey; \
-    osprey --version || true
+    if make build && [ -x target/release/osprey ]; then \
+        ln -s /opt/osprey-src/target/release/osprey /usr/local/bin/osprey; \
+        osprey --version || true; \
+    else \
+        echo "WARNING: osprey build failed on this image — osprey column will be ABSENT"; \
+    fi
 
 # koruc from source — the toolchain under test, pinned by KORU_REF.
 RUN set -eux; \
