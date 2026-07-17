@@ -21,3 +21,8 @@ suites/*/reference/results/
 
 # OS cruft
 .DS_Store
+
+# json-parse suite artifacts
+suites/json-parse/baseline/zig_scan
+suites/json-parse/baseline/zig_tree
+suites/json-parse/data/corrupt.json
