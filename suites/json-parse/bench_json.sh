@@ -36,13 +36,20 @@ python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (
 
 echo "== timed passes (3s each, same doc: $(wc -c < "$DOC") bytes) =="
 bytes=$(wc -c < "$DOC")
+# 3 repetitions, report the BEST (max-throughput) rep — the standard
+# microbench answer to scheduler noise — plus the spread across reps.
 run_one() {
   local label="$1" category="$2"; shift 2
-  local out; out="$("$@" "$DOC" 2>&1 | grep -E "^passes=" | head -1)"
-  local passes secs; passes="${out#passes=}"; passes="${passes%% *}"
-  secs="$(echo "$out" | sed 's/.*seconds=\([0-9.]*\).*/\1/')"
-  local mbs; mbs="$(python3 -c "print(f'{$passes * $bytes / $secs / 1e6:.1f}')")"
-  printf "  %-22s %-18s passes=%-8s %.6ss  %s MB/s\n" "$label" "[$category]" "$passes" "$secs" "$mbs"
+  local best_mbs="0" best_passes="" best_secs="" all=""
+  for rep in 1 2 3; do
+    local out; out="$("$@" "$DOC" 2>&1 | grep -E "^passes=" | head -1)"
+    local passes secs; passes="${out#passes=}"; passes="${passes%% *}"
+    secs="$(echo "$out" | sed 's/.*seconds=\([0-9.]*\).*/\1/')"
+    local mbs; mbs="$(python3 -c "print(f'{$passes * $bytes / $secs / 1e6:.1f}')")"
+    all="$all $mbs"
+    if python3 -c "exit(0 if $mbs > $best_mbs else 1)"; then best_mbs="$mbs"; best_passes="$passes"; best_secs="$secs"; fi
+  done
+  printf "  %-22s %-18s passes=%-8s best %s MB/s   (reps:%s)\n" "$label" "[$category]" "$best_passes" "$best_mbs" "$all"
 }
 run_one "koru std/parser" "recognizer" "$ROOT/koru/a.out"
 run_one "zig std.json.Scanner" "validate-tokens" "$ROOT/baseline/zig_scan"
