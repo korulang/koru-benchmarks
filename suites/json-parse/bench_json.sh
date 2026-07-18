@@ -32,6 +32,14 @@ if command -v ghc >/dev/null 2>&1; then
 else
   echo "  (skip parsec: ghc not found)"; HAVE_PARSEC=0
 fi
+# Rust: nom (general-library combinator peer, recognizer lane) + serde_json
+# (specialized deserializer, full-tree lane) — one crate, two bins.
+if command -v cargo >/dev/null 2>&1; then
+  ( cd "$CONTENDERS/rust" && cargo build --release >/dev/null 2>&1 ) || { echo "rust contenders build FAILED" >&2; exit 1; }
+  HAVE_RUST=1
+else
+  echo "  (skip nom/serde: cargo not found)"; HAVE_RUST=0
+fi
 
 echo "== correctness gates =="
 # Reject gate: a corrupted doc must produce PARSE-ERROR from the recognizer.
@@ -53,6 +61,15 @@ if [ "${HAVE_PARSEC:-0}" = "1" ]; then
     case "$pfirst" in
       INVALID*) echo "  reject gate (parsec/$lane): OK";;
       *) echo "  reject gate (parsec/$lane) FAILED: got '$pfirst'" >&2; exit 1;;
+    esac
+  done
+fi
+if [ "${HAVE_RUST:-0}" = "1" ]; then
+  for b in nom_recognize serde_build; do
+    bfirst="$( "$CONTENDERS/rust/target/release/$b" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+    case "$bfirst" in
+      INVALID*) echo "  reject gate ($b): OK";;
+      *) echo "  reject gate ($b) FAILED: got '$bfirst'" >&2; exit 1;;
     esac
   done
 fi
@@ -98,12 +115,16 @@ echo "-- recognizer lane --"
 run_one "koru std/parser"      "recognizer"      "general-lib" "$ROOT/koru/a.out"
 [ "${HAVE_PARSEC:-0}" = "1" ] && \
 run_one "haskell parsec"       "recognizer"      "general-lib" "$CONTENDERS/parsec/json_parsec" recognize
+[ "${HAVE_RUST:-0}" = "1" ] && \
+run_one "rust nom"             "recognizer"      "general-lib" "$CONTENDERS/rust/target/release/nom_recognize"
 run_one "zig hand-rolled"      "recognizer"      "specialized" "$ROOT/baseline/zig_recognize"
 echo "-- validate-tokens lane --"
 run_one "zig std.json.Scanner" "validate-tokens" "specialized" "$ROOT/baseline/zig_scan"
 echo "-- full-tree lane --"
 [ "${HAVE_PARSEC:-0}" = "1" ] && \
 run_one "haskell parsec"       "full-tree"       "general-lib" "$CONTENDERS/parsec/json_parsec" build
+[ "${HAVE_RUST:-0}" = "1" ] && \
+run_one "rust serde_json"      "full-tree"       "specialized" "$CONTENDERS/rust/target/release/serde_build"
 run_one "zig std.json Value"   "full-tree"       "specialized" "$ROOT/baseline/zig_tree"
 run_one "python json.loads"    "full-tree"       "specialized" python3 "$ROOT/baseline/py_loads.py"
 echo

@@ -1,0 +1,27 @@
+[package]
+name = "json-contenders"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Two contenders share one crate:
+#   nom_recognize — general-library parser COMBINATOR (koru's Rust peer),
+#                   recognizer lane: validates, builds no tree.
+#   serde_build   — SPECIALIZED JSON deserializer (koru's rival category, like
+#                   the zig std.json / python entries), full-tree lane.
+[[bin]]
+name = "nom_recognize"
+path = "src/bin/nom_recognize.rs"
+
+[[bin]]
+name = "serde_build"
+path = "src/bin/serde_build.rs"
+
+[dependencies]
+nom = "7"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
