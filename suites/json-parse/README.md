@@ -25,14 +25,29 @@ seconds in-process, print `passes=<n> seconds=<s>`. `bench_json.sh` builds
 PARSE-ERROR line/col; python cross-checks the accept case), refuses to time
 while a koru full-suite sweep is running, and prints the lane table.
 
+Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
+
+- 2026-07-18 pre-factoring, quiet window: koru 219.1 / zig scan 306.9 /
+  zig tree 98.9 / py 129.2 MB/s.
+- 2026-07-18 common-head factoring lands in koru_std/parser.kz (koru
+  a50bf973): koru 353.3 / zig scan 339.0 (same window). The two adjacent
+  lanes now overlap within rep noise; lanes differ, so that sentence is
+  the whole claim.
+- The cliff: a 111-byte depth-24 RIGHT-nested doc ran 9 passes/3s
+  (exponential last-element reparse, 2^depth) vs 4.0M for its left-nested
+  twin. Factoring closed it: both ~5M. The driver's cliff gate pins
+  right/left within 10x forever.
+
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
 - **Right-recursive lists**: recursion depth tracks array length. The
   generator bounds arrays at 16 elements; a million-element array would
   exhaust the stack. Gap named: repetition (`many`/`sep-by`) compiled as a
   loop.
-- **Backtracking PEG, no memoization**: worst-case inputs are super-linear.
-  Gap named: chain-commit / packrat under the same surface.
+- **Backtracking PEG on non-factorable overlaps**: common-HEAD alternatives
+  factor (head parses once, koru a50bf973); alternatives sharing a head but
+  diverging mid-chain still backtrack and reparse. Gap named: chain-commit /
+  packrat under the same surface.
 - **Spans only (cut 1)**: the recognizer lane exists because typed capture
   is cut 2 (the regex named-groups story). When trees land, this suite
   grows a full-tree Koru lane against zig_tree/py_loads.

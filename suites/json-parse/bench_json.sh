@@ -33,6 +33,17 @@ case "$first" in
 esac
 # Accept gate: the doc is valid by construction (json.dumps); python re-checks.
 python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (python cross-check)')" || exit 1
+# Cliff gate: right-nested and left-nested twins (111 bytes, depth 24) must
+# parse within 10x of each other. Before common-head factoring the right
+# twin was ~450,000x slower (exponential last-element reparse); this gate
+# pins that cliff closed.
+rp="$( "$ROOT/koru/a.out" "$ROOT/data/right24.json" | head -1 | sed 's/passes=\([0-9]*\).*/\1/' )"
+lp="$( "$ROOT/koru/a.out" "$ROOT/data/left24.json"  | head -1 | sed 's/passes=\([0-9]*\).*/\1/' )"
+if python3 -c "exit(0 if $rp * 10 >= $lp else 1)"; then
+  echo "  cliff gate: OK (right=$rp left=$lp passes)"
+else
+  echo "  cliff gate FAILED: right=$rp vs left=$lp — exponential reparse is back" >&2; exit 1
+fi
 
 echo "== timed passes (3s each, same doc: $(wc -c < "$DOC") bytes) =="
 bytes=$(wc -c < "$DOC")
