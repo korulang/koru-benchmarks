@@ -40,6 +40,22 @@ if command -v cargo >/dev/null 2>&1; then
 else
   echo "  (skip nom/serde: cargo not found)"; HAVE_RUST=0
 fi
+# Haskell megaparsec — parsec's modern successor; built via nix-shell (the GHC
+# here is nix-managed and megaparsec isn't in the global pkg db).
+if command -v nix-shell >/dev/null 2>&1; then
+  ( cd "$CONTENDERS/megaparsec" && nix-shell -p "haskellPackages.ghcWithPackages (p: [p.megaparsec])" --run 'ghc -O2 json_megaparsec.hs -o json_megaparsec' >/dev/null 2>&1 ) || { echo "haskell megaparsec build FAILED" >&2; exit 1; }
+  HAVE_MEGA=1
+else
+  echo "  (skip megaparsec: nix-shell not found)"; HAVE_MEGA=0
+fi
+# FParsec (F#/.NET) — Release config = optimizations on (the .NET -O2 equiv).
+if command -v dotnet >/dev/null 2>&1; then
+  ( cd "$CONTENDERS/fparsec" && dotnet build -c Release >/dev/null 2>&1 ) || { echo "fparsec build FAILED" >&2; exit 1; }
+  HAVE_FPARSEC=1
+else
+  echo "  (skip fparsec: dotnet not found)"; HAVE_FPARSEC=0
+fi
+FPARSEC_DLL="$CONTENDERS/fparsec/bin/Release/net8.0/fparsec_bench.dll"
 
 echo "== correctness gates =="
 # Reject gate: a corrupted doc must produce PARSE-ERROR from the recognizer.
@@ -72,6 +88,20 @@ if [ "${HAVE_RUST:-0}" = "1" ]; then
       *) echo "  reject gate ($b) FAILED: got '$bfirst'" >&2; exit 1;;
     esac
   done
+fi
+if [ "${HAVE_MEGA:-0}" = "1" ]; then
+  mfirst="$( "$CONTENDERS/megaparsec/json_megaparsec" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+  case "$mfirst" in
+    INVALID*) echo "  reject gate (megaparsec): OK";;
+    *) echo "  reject gate (megaparsec) FAILED: got '$mfirst'" >&2; exit 1;;
+  esac
+fi
+if [ "${HAVE_FPARSEC:-0}" = "1" ]; then
+  ffirst="$( dotnet "$FPARSEC_DLL" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+  case "$ffirst" in
+    INVALID*) echo "  reject gate (fparsec): OK";;
+    *) echo "  reject gate (fparsec) FAILED: got '$ffirst'" >&2; exit 1;;
+  esac
 fi
 # Accept gate: the doc is valid by construction (json.dumps); python re-checks.
 python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (python cross-check)')" || exit 1
@@ -117,6 +147,10 @@ run_one "koru std/parser"      "recognizer"      "general-lib" "$ROOT/koru/a.out
 run_one "haskell parsec"       "recognizer"      "general-lib" "$CONTENDERS/parsec/json_parsec" recognize
 [ "${HAVE_RUST:-0}" = "1" ] && \
 run_one "rust nom"             "recognizer"      "general-lib" "$CONTENDERS/rust/target/release/nom_recognize"
+[ "${HAVE_FPARSEC:-0}" = "1" ] && \
+run_one "fparsec (F#/.NET)"    "recognizer"      "general-lib" dotnet "$FPARSEC_DLL"
+[ "${HAVE_MEGA:-0}" = "1" ] && \
+run_one "haskell megaparsec"   "recognizer"      "general-lib" "$CONTENDERS/megaparsec/json_megaparsec"
 run_one "zig hand-rolled"      "recognizer"      "specialized" "$ROOT/baseline/zig_recognize"
 echo "-- validate-tokens lane --"
 run_one "zig std.json.Scanner" "validate-tokens" "specialized" "$ROOT/baseline/zig_scan"

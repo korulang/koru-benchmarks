@@ -35,3 +35,4 @@ suites/json-parse/contenders/**/*.o
 suites/json-parse/contenders/rust/target/
 suites/json-parse/contenders/fparsec/bin/
 suites/json-parse/contenders/fparsec/obj/
+suites/json-parse/contenders/megaparsec/json_megaparsec
