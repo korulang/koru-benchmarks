@@ -18,6 +18,17 @@ LANES and no cross-lane verdict exists. The lanes, by work done:
 The honest sentence shape is "in the recognizer lane, on this doc, on this
 machine, we measured X MB/s" — never "faster than Y" across lanes.
 
+A second, orthogonal axis is CATEGORY, and it is the peer axis:
+
+- **general-library** — you author a grammar/combinators and get a parser from
+  a reusable library: koru std/parser, Haskell parsec, Rust nom, F# FParsec.
+- **specialized** — a bespoke or JSON-specific deserializer: the zig rivals
+  (hand-rolled, std.json), python json.loads, Rust serde_json.
+
+koru's true peer story is general-vs-general WITHIN a lane. A specialized
+entry (serde, the zig rivals) is a reference point, never a naked "we beat X"
+against koru. Every table row is labeled with both its lane and its category.
+
 Protocol: identical for every contender — read `data/doc.json` (27,102
 bytes, seed-41 generated, minified), loop the parse for 3 wall-clock
 seconds in-process, print `passes=<n> seconds=<s>`. `bench_json.sh` builds
@@ -74,6 +85,26 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   both measured back-to-back in ONE run = koru at 60% of a dedicated
   hand-written validator (was ~42% before this session's ladder work).
   Diagnostic exact, cliff gate held.
+- 2026-07-18 the general-library PEERS arrive — koru's true category (author a
+  grammar/combinators, get a parser from a reusable library), matched in the
+  recognizer lane. Same-run board (M2 Pro, best-of-3, this suite's protocol,
+  MEASURED, koru banked at its 537 ladder number): recognizer/general-lib koru
+  537.5 (reps 524.8-537.5) / rust nom 277.3 (276.8-277.3) / haskell parsec 12.1
+  (11.3-12.1); recognizer/specialized zig hand-rolled 853.5; validate-tokens/
+  specialized zig Scanner 343.4; full-tree/general-lib parsec 4.9; full-tree/
+  specialized rust serde_json 192.7 / zig std.json Value 98.4 / python
+  json.loads 137.3. THE same-lane same-category sentence: among general parser
+  libraries in the recognizer lane, this run, koru leads Rust nom by ~1.9x and
+  Haskell parsec by ~44x. The MECHANISM of that lead — not a caveat, the reason:
+  all three are general libraries, and koru compiles its grammar to
+  anchored-prefix DFA matchers at comptime while nom and parsec stay general
+  runtime combinators; koru specializes to the grammar for free, which is the
+  library's whole pitch. Fairness proven before this line was written: all
+  three are recognizer-lane (validate-only, no tree — nom folds to unit, parsec
+  recognize returns () and discards); parsec built -O2 (2.47x over its own -O0)
+  on a strict ByteString stream, and a String-stream build measured 13.2 MB/s
+  so the number is not a slow-stream artifact. serde_json is the specialized
+  reference, never a same-category peer to koru.
 - Apples-to-apples discipline: koru-vs-rival ratios are quoted only from a
   SINGLE run where both are measured back-to-back on the same machine state,
   each with its rep spread. The rival drifts run-to-run (866-899 across
