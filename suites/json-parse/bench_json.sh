@@ -49,13 +49,33 @@ else
   echo "  (skip megaparsec: nix-shell not found)"; HAVE_MEGA=0
 fi
 # FParsec (F#/.NET) — Release config = optimizations on (the .NET -O2 equiv).
-if command -v dotnet >/dev/null 2>&1; then
+# Probe that the runtime actually RUNS, not just that the binary is on PATH — a
+# broken/outdated .NET SDK must SKIP the contender, not abort the whole board.
+if command -v dotnet >/dev/null 2>&1 && dotnet --version >/dev/null 2>&1; then
   ( cd "$CONTENDERS/fparsec" && dotnet build -c Release >/dev/null 2>&1 ) || { echo "fparsec build FAILED" >&2; exit 1; }
   HAVE_FPARSEC=1
 else
   echo "  (skip fparsec: dotnet not found)"; HAVE_FPARSEC=0
 fi
 FPARSEC_DLL="$CONTENDERS/fparsec/bin/Release/net8.0/fparsec_bench.dll"
+# Runtime smoke test: a present SDK (dotnet build succeeds) does NOT guarantee the
+# net8.0 RUNTIME is installed. If the built DLL can't actually launch, skip
+# fparsec rather than aborting the whole board on its reject gate.
+if [ "${HAVE_FPARSEC:-0}" = "1" ] && ! dotnet "$FPARSEC_DLL" "$DOC" >/dev/null 2>&1; then
+  echo "  (skip fparsec: .NET runtime cannot launch the built app)"; HAVE_FPARSEC=0
+fi
+# koru std/parser -> C backend: lower the SAME grammar as the koru entry
+# (contenders/koru_c/json.k == koru/bench.k's grammar) to a standalone C parser
+# via `koruc json.k parser:generate c`, then cc it with the in-process bench
+# harness. Capability-probed: skipped unless this koruc knows the
+# `parser:generate` command (it lives on the parser-generate-c branch until
+# merged to main). Same lane + category as the koru entry — Zig-vs-C codegen of
+# one library's output.
+if ( cd "$CONTENDERS/koru_c" && rm -f json.c && "$KORUC" json.k parser:generate c >/dev/null 2>&1 && [ -f json.c ] && cc -O2 -Wall bench_main.c -o json_c_recognize >/dev/null 2>&1 ); then
+  HAVE_KORU_C=1
+else
+  echo "  (skip koru_c: koruc lacks parser:generate, or cc failed)"; HAVE_KORU_C=0
+fi
 
 echo "== correctness gates =="
 # Reject gate: a corrupted doc must produce PARSE-ERROR from the recognizer.
@@ -103,6 +123,13 @@ if [ "${HAVE_FPARSEC:-0}" = "1" ]; then
     *) echo "  reject gate (fparsec) FAILED: got '$ffirst'" >&2; exit 1;;
   esac
 fi
+if [ "${HAVE_KORU_C:-0}" = "1" ]; then
+  cfirst="$( "$CONTENDERS/koru_c/json_c_recognize" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+  case "$cfirst" in
+    INVALID*) echo "  reject gate (koru_c): OK";;
+    *) echo "  reject gate (koru_c) FAILED: got '$cfirst'" >&2; exit 1;;
+  esac
+fi
 # Accept gate: the doc is valid by construction (json.dumps); python re-checks.
 python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (python cross-check)')" || exit 1
 # Cliff gate: right-nested and left-nested twins (111 bytes, depth 24) must
@@ -143,6 +170,8 @@ run_one() {
 }
 echo "-- recognizer lane --"
 run_one "koru std/parser"      "recognizer"      "general-lib" "$ROOT/koru/a.out"
+[ "${HAVE_KORU_C:-0}" = "1" ] && \
+run_one "koru std/parser -> C" "recognizer"      "general-lib" "$CONTENDERS/koru_c/json_c_recognize"
 [ "${HAVE_PARSEC:-0}" = "1" ] && \
 run_one "haskell parsec"       "recognizer"      "general-lib" "$CONTENDERS/parsec/json_parsec" recognize
 [ "${HAVE_RUST:-0}" = "1" ] && \
