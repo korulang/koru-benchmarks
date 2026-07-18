@@ -46,6 +46,18 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   (exponential last-element reparse, 2^depth) vs 4.0M for its left-nested
   twin. Factoring closed it: both ~5M. The driver's cliff gate pins
   right/left within 10x forever.
+- 2026-07-18 rung 1 of the codegen ladder — first-byte gate on PATTERN group
+  heads (koru_std/parser.kz + regex_engine.prefixFirstBytes): a pattern
+  alternative is entered only when the cursor byte is in its prefix-DFA's
+  admissible first set, so the failed DFA-matcher calls for the other
+  alternatives are skipped (an object value no longer probes the
+  string/number/keyword matchers before reaching `object`). Same-window
+  control: koru 351.3 -> 375.2 MB/s (+6.8%), reps fully separated (baseline
+  max 351.3 < post min 366.2); cliff gate held. RULE heads are deliberately
+  NOT gated — their descent has to reach the deepest terminal to keep
+  `expected <terminal>` from coarsening to `expected <rule>`, so the reject
+  message stays byte-for-byte the ungated one (the gate's cold miss path
+  records the same furthest-failure pos+expected the matcher orelse would).
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
@@ -57,13 +69,16 @@ Known instrument constraints (each names a std/parser gap, AoC-pattern):
   factor (head parses once, koru a50bf973); alternatives sharing a head but
   diverging mid-chain still backtrack and reparse. Gap named: chain-commit /
   packrat under the same surface.
-- **The 2.5x same-lane gap** (341 vs 866 MB/s): the hand-rolled recognizer
-  dispatches on one byte-switch and consumes inline; the generated one pays
-  a DFA-table function call per terminal attempt, accept-state tracking per
-  byte (`last_end`), and a call per rule. The ladder, in likely order:
-  first-byte dispatch across group heads, single-char `lit` inlined to a
-  byte compare, accept-tracking elided for patterns whose accept set is a
-  suffix condition. Each rung is codegen-only — the surface never moves.
+- **The same-lane gap** (was 341 vs 866, now 375 vs ~866 MB/s): the
+  hand-rolled recognizer dispatches on one byte-switch and consumes inline;
+  the generated one still pays a DFA-table function call per terminal *that
+  the first-byte gate admits*, accept-state tracking per byte (`last_end`),
+  and a call per rule. The ladder: **[DONE, rung 1]** first-byte dispatch
+  across group heads (pattern heads gated by prefix-DFA first set); **[next,
+  rung 2]** single-char `lit` inlined to a byte compare (`input[p] == ','`
+  instead of a slice-eq call); **[rung 3]** accept-tracking elided for
+  patterns whose accept set is a suffix condition. Each rung is codegen-only
+  — the surface never moves.
 - **Spans only (cut 1)**: the recognizer lane exists because typed capture
   is cut 2 (the regex named-groups story). When trees land, this suite
   grows a full-tree Koru lane against zig_tree/py_loads.
