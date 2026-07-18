@@ -21,7 +21,7 @@ fi
 
 echo "== build (koruc, sibling checkout) =="
 ( cd "$ROOT/koru" && "$KORUC" build bench.k >/dev/null 2>&1 ) || { echo "koruc build FAILED" >&2; exit 1; }
-( cd "$ROOT/baseline" && zig build-exe -O ReleaseFast zig_scan.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_tree.zig >/dev/null 2>&1 ) || { echo "zig baseline build FAILED" >&2; exit 1; }
+( cd "$ROOT/baseline" && zig build-exe -O ReleaseFast zig_scan.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_tree.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_recognize.zig >/dev/null 2>&1 ) || { echo "zig baseline build FAILED" >&2; exit 1; }
 
 echo "== correctness gates =="
 # Reject gate: a corrupted doc must produce PARSE-ERROR from the recognizer.
@@ -30,6 +30,11 @@ first="$( (timeout 5 "$ROOT/koru/a.out" "$ROOT/data/corrupt.json" 2>/dev/null ||
 case "$first" in
   PARSE-ERROR*) echo "  reject gate: OK ($first)";;
   *) echo "  reject gate FAILED: got '$first'" >&2; exit 1;;
+esac
+rfirst="$( "$ROOT/baseline/zig_recognize" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+case "$rfirst" in
+  INVALID*) echo "  reject gate (zig_recognize): OK";;
+  *) echo "  reject gate (zig_recognize) FAILED: got '$rfirst'" >&2; exit 1;;
 esac
 # Accept gate: the doc is valid by construction (json.dumps); python re-checks.
 python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (python cross-check)')" || exit 1
@@ -63,6 +68,7 @@ run_one() {
   printf "  %-22s %-18s passes=%-8s best %s MB/s   (reps:%s)\n" "$label" "[$category]" "$best_passes" "$best_mbs" "$all"
 }
 run_one "koru std/parser" "recognizer" "$ROOT/koru/a.out"
+run_one "zig hand-rolled" "recognizer" "$ROOT/baseline/zig_recognize"
 run_one "zig std.json.Scanner" "validate-tokens" "$ROOT/baseline/zig_scan"
 run_one "zig std.json Value" "full-tree" "$ROOT/baseline/zig_tree"
 run_one "python json.loads" "full-tree" python3 "$ROOT/baseline/py_loads.py"

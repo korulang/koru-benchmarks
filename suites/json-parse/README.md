@@ -33,6 +33,15 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   a50bf973): koru 353.3 / zig scan 339.0 (same window). The two adjacent
   lanes now overlap within rep noise; lanes differ, so that sentence is
   the whole claim.
+- 2026-07-18 the TRUE same-lane rival arrives: `zig_recognize.zig`, a
+  hand-rolled full-RFC validation-only recognizer (byte-switch descent, no
+  allocation, honestly tuned). Same-window board: koru 341.3 / hand-rolled
+  865.9 / scanner 330.8. THE same-lane sentence: the generated recognizer
+  runs at ~40% of a dedicated hand-written validator. Nuance both ways:
+  the hand-rolled one is general (ws anywhere, \uXXXX), the koru grammar
+  is comptime-specialized to the doc's dialect — specialization for free
+  is the library's pitch, and it still trails; the gap is the codegen
+  ladder, not a mystery.
 - The cliff: a 111-byte depth-24 RIGHT-nested doc ran 9 passes/3s
   (exponential last-element reparse, 2^depth) vs 4.0M for its left-nested
   twin. Factoring closed it: both ~5M. The driver's cliff gate pins
@@ -48,6 +57,13 @@ Known instrument constraints (each names a std/parser gap, AoC-pattern):
   factor (head parses once, koru a50bf973); alternatives sharing a head but
   diverging mid-chain still backtrack and reparse. Gap named: chain-commit /
   packrat under the same surface.
+- **The 2.5x same-lane gap** (341 vs 866 MB/s): the hand-rolled recognizer
+  dispatches on one byte-switch and consumes inline; the generated one pays
+  a DFA-table function call per terminal attempt, accept-state tracking per
+  byte (`last_end`), and a call per rule. The ladder, in likely order:
+  first-byte dispatch across group heads, single-char `lit` inlined to a
+  byte compare, accept-tracking elided for patterns whose accept set is a
+  suffix condition. Each rung is codegen-only — the surface never moves.
 - **Spans only (cut 1)**: the recognizer lane exists because typed capture
   is cut 2 (the regex named-groups story). When trees land, this suite
   grows a full-tree Koru lane against zig_tree/py_loads.
