@@ -58,6 +58,27 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   `expected <terminal>` from coarsening to `expected <rule>`, so the reject
   message stays byte-for-byte the ungated one (the gate's cold miss path
   records the same furthest-failure pos+expected the matcher orelse would).
+- 2026-07-18 rung 3 of the codegen ladder — accept-write hoist for
+  suffix-terminal DFAs (regex_engine.emitPrefixMatcher, koru 2b82d322). The
+  prefix matcher did `if (A[s]) last_end = i + 1;` on EVERY byte (accept-table
+  load + branch + loop-carried store). For a matcher whose accepting states
+  transition only to the dead sink — string, keyword — an accept happens at
+  most once, right before the break, so that per-byte work is pure overhead:
+  the loop is reduced to transition + break-on-dead and the single match end
+  is read off the state it stopped on. Numbers keep the per-byte write (digit
+  -> digit re-accepts, not suffix-terminal). Strings are the bulk of JSON
+  bytes, hence the size. Same-window control vs committed rung-1: koru 366.4
+  -> 548.6 MB/s (+49.7%), reps fully separated (rung-1 max 366.4 << rung-3 min
+  518.8). Definitive SAME-RUN apples-to-apples: koru recognizer 537.2 MB/s
+  (reps 529.0-537.2) vs the hand-rolled rival 892.0 MB/s (reps 831.4-892.0),
+  both measured back-to-back in ONE run = koru at 60% of a dedicated
+  hand-written validator (was ~42% before this session's ladder work).
+  Diagnostic exact, cliff gate held.
+- Apples-to-apples discipline: koru-vs-rival ratios are quoted only from a
+  SINGLE run where both are measured back-to-back on the same machine state,
+  each with its rep spread. The rival drifts run-to-run (866-899 across
+  sessions); a koru number from one run over a rival number from another is
+  not a comparison, so we never form the ratio that way.
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
@@ -69,16 +90,24 @@ Known instrument constraints (each names a std/parser gap, AoC-pattern):
   factor (head parses once, koru a50bf973); alternatives sharing a head but
   diverging mid-chain still backtrack and reparse. Gap named: chain-commit /
   packrat under the same surface.
-- **The same-lane gap** (was 341 vs 866, now 375 vs ~866 MB/s): the
-  hand-rolled recognizer dispatches on one byte-switch and consumes inline;
-  the generated one still pays a DFA-table function call per terminal *that
-  the first-byte gate admits*, accept-state tracking per byte (`last_end`),
-  and a call per rule. The ladder: **[DONE, rung 1]** first-byte dispatch
-  across group heads (pattern heads gated by prefix-DFA first set); **[next,
-  rung 2]** single-char `lit` inlined to a byte compare (`input[p] == ','`
-  instead of a slice-eq call); **[rung 3]** accept-tracking elided for
-  patterns whose accept set is a suffix condition. Each rung is codegen-only
-  — the surface never moves.
+- **The same-lane gap** (was 341 vs 866, now 537 vs 892 MB/s same-run = 60%):
+  the hand-rolled recognizer dispatches on one byte-switch and consumes
+  inline; the generated one still pays a per-byte 256-wide DFA-table load and
+  a call per rule. The ladder:
+  - **[DONE, rung 1, +6.8%]** first-byte dispatch across group heads (pattern
+    heads gated by prefix-DFA first set).
+  - **[rung 2 — NULL, reverted]** single-char `lit` -> byte compare. Zig
+    ReleaseFast already inlines the 1-byte `lit_eq` into the same machine
+    code; no measurable delta, so not landed (honesty about the wash IS the
+    result).
+  - **[DONE, rung 3, +49.7%]** accept-write hoisted out of the per-byte loop
+    for suffix-terminal DFAs (string, keyword — accepting states go only to
+    dead). The big one: strings dominate the byte count.
+  - **[next, suspect #2]** the 256-wide `T[s*256 + b]` load per byte — the
+    remaining structural cost vs the rival's inline byte tests. Candidate: a
+    const bitset (OR-into-bits comprehension) reducing the load to a
+    shift+and for simple terminals.
+  Each rung is codegen-only — the surface never moves.
 - **Spans only (cut 1)**: the recognizer lane exists because typed capture
   is cut 2 (the regex named-groups story). When trees land, this suite
   grows a full-tree Koru lane against zig_tree/py_loads.
