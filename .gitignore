@@ -27,3 +27,12 @@ suites/json-parse/baseline/zig_scan
 suites/json-parse/baseline/zig_tree
 suites/json-parse/data/corrupt.json
 suites/json-parse/baseline/zig_recognize
+
+# json-parse contenders — compiled artifacts (source is tracked)
+suites/json-parse/contenders/parsec/json_parsec
+suites/json-parse/contenders/**/*.hi
+suites/json-parse/contenders/**/*.o
+suites/json-parse/contenders/nom/target/
+suites/json-parse/contenders/serde/target/
+suites/json-parse/contenders/fparsec/bin/
+suites/json-parse/contenders/fparsec/obj/

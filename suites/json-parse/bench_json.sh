@@ -11,6 +11,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 KORUC="${KORUC:-$ROOT/../../../koru/zig-out/bin/koruc}"
+CONTENDERS="$ROOT/contenders"
 DOC="$ROOT/data/doc.json"
 
 [ -x "$KORUC" ] || { echo "koruc not found at $KORUC" >&2; exit 2; }
@@ -22,6 +23,15 @@ fi
 echo "== build (koruc, sibling checkout) =="
 ( cd "$ROOT/koru" && "$KORUC" build bench.k >/dev/null 2>&1 ) || { echo "koruc build FAILED" >&2; exit 1; }
 ( cd "$ROOT/baseline" && zig build-exe -O ReleaseFast zig_scan.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_tree.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_recognize.zig >/dev/null 2>&1 ) || { echo "zig baseline build FAILED" >&2; exit 1; }
+
+echo "== build contenders (general-library peers) =="
+# Haskell parsec — the canonical parser-combinator library; koru's truest peer.
+if command -v ghc >/dev/null 2>&1; then
+  ( cd "$CONTENDERS/parsec" && ghc -O2 -package parsec -package time -package deepseq -package bytestring json_parsec.hs -o json_parsec >/dev/null 2>&1 ) || { echo "haskell parsec build FAILED" >&2; exit 1; }
+  HAVE_PARSEC=1
+else
+  echo "  (skip parsec: ghc not found)"; HAVE_PARSEC=0
+fi
 
 echo "== correctness gates =="
 # Reject gate: a corrupted doc must produce PARSE-ERROR from the recognizer.
@@ -36,6 +46,16 @@ case "$rfirst" in
   INVALID*) echo "  reject gate (zig_recognize): OK";;
   *) echo "  reject gate (zig_recognize) FAILED: got '$rfirst'" >&2; exit 1;;
 esac
+if [ "${HAVE_PARSEC:-0}" = "1" ]; then
+  # Both parsec lanes must reject the corrupt doc.
+  for lane in recognize build; do
+    pfirst="$( "$CONTENDERS/parsec/json_parsec" "$lane" "$ROOT/data/corrupt.json" 2>&1 | head -1 )"
+    case "$pfirst" in
+      INVALID*) echo "  reject gate (parsec/$lane): OK";;
+      *) echo "  reject gate (parsec/$lane) FAILED: got '$pfirst'" >&2; exit 1;;
+    esac
+  done
+fi
 # Accept gate: the doc is valid by construction (json.dumps); python re-checks.
 python3 -c "import json,sys; json.load(open('$DOC')); print('  accept gate: OK (python cross-check)')" || exit 1
 # Cliff gate: right-nested and left-nested twins (111 bytes, depth 24) must
@@ -54,8 +74,15 @@ echo "== timed passes (3s each, same doc: $(wc -c < "$DOC") bytes) =="
 bytes=$(wc -c < "$DOC")
 # 3 repetitions, report the BEST (max-throughput) rep — the standard
 # microbench answer to scheduler noise — plus the spread across reps.
+# run_one <label> <lane> <category> <cmd...>. Two discipline axes are printed:
+#   lane     = WORK DONE (recognizer < validate-tokens < full-tree)
+#   category = general-library (a reusable parser lib: koru, parsec, nom,
+#              FParsec) vs specialized (a bespoke/JSON-specific deserializer:
+#              the zig rivals, python, serde). A fair peer story is
+#              general-vs-general in the SAME lane; never a naked cross-category
+#              "we beat X".
 run_one() {
-  local label="$1" category="$2"; shift 2
+  local label="$1" lane="$2" cat="$3"; shift 3
   local best_mbs="0" best_passes="" best_secs="" all=""
   for rep in 1 2 3; do
     local out; out="$("$@" "$DOC" 2>&1 | grep -E "^passes=" | head -1)"
@@ -65,13 +92,22 @@ run_one() {
     all="$all $mbs"
     if python3 -c "exit(0 if $mbs > $best_mbs else 1)"; then best_mbs="$mbs"; best_passes="$passes"; best_secs="$secs"; fi
   done
-  printf "  %-22s %-18s passes=%-8s best %s MB/s   (reps:%s)\n" "$label" "[$category]" "$best_passes" "$best_mbs" "$all"
+  printf "  %-22s %-17s %-13s passes=%-8s best %8s MB/s  (reps:%s)\n" "$label" "[$lane]" "$cat" "$best_passes" "$best_mbs" "$all"
 }
-run_one "koru std/parser" "recognizer" "$ROOT/koru/a.out"
-run_one "zig hand-rolled" "recognizer" "$ROOT/baseline/zig_recognize"
-run_one "zig std.json.Scanner" "validate-tokens" "$ROOT/baseline/zig_scan"
-run_one "zig std.json Value" "full-tree" "$ROOT/baseline/zig_tree"
-run_one "python json.loads" "full-tree" python3 "$ROOT/baseline/py_loads.py"
+echo "-- recognizer lane --"
+run_one "koru std/parser"      "recognizer"      "general-lib" "$ROOT/koru/a.out"
+[ "${HAVE_PARSEC:-0}" = "1" ] && \
+run_one "haskell parsec"       "recognizer"      "general-lib" "$CONTENDERS/parsec/json_parsec" recognize
+run_one "zig hand-rolled"      "recognizer"      "specialized" "$ROOT/baseline/zig_recognize"
+echo "-- validate-tokens lane --"
+run_one "zig std.json.Scanner" "validate-tokens" "specialized" "$ROOT/baseline/zig_scan"
+echo "-- full-tree lane --"
+[ "${HAVE_PARSEC:-0}" = "1" ] && \
+run_one "haskell parsec"       "full-tree"       "general-lib" "$CONTENDERS/parsec/json_parsec" build
+run_one "zig std.json Value"   "full-tree"       "specialized" "$ROOT/baseline/zig_tree"
+run_one "python json.loads"    "full-tree"       "specialized" python3 "$ROOT/baseline/py_loads.py"
 echo
-echo "Categories are lanes, not a ranking: recognizer < validate-tokens < full-tree in work done."
+echo "Lanes are work done, not a ranking: recognizer < validate-tokens < full-tree."
+echo "Category (general-lib vs specialized) is the peer axis: koru's true peers are the"
+echo "general-library parser combinators (parsec, nom, FParsec), matched within a lane."
 echo "Numbers are MEASURED on this machine under this suite's own protocol only."
