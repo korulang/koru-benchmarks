@@ -106,28 +106,49 @@ part of O13 that dissolves the archetype is real and running; the part that
 *optimises the dissolved form* is not. Both category-boundary entries are
 falsifiable right now.
 
-### Job two — fusion. BUILT.
+### Job two — fusion. DESIGNED, not built. (Corrected 2026-07-31.)
+
+**An earlier revision of this document said BUILT. That was wrong, and the
+correction matters more than the claim did.**
 
 The second half of O13 is the one neither ECS camp has. Because subscriptions
 are compiled rather than registered at runtime, all the standing rules over a
-store can be served by **one** pass over the corpus. S archetype systems are S
-bandwidth-bound passes over overlapping columns; one fused stripe is one corpus
-read regardless of how many queries there are.
+store *could* be served by one pass over the corpus. S archetype systems are S
+bandwidth-bound passes over overlapping columns; one fused stripe would be one
+corpus read regardless of how many queries there are.
 
-**MEASURED: this exists.** `koru_std/store.kz:3165` emits a `__store_stripe_<s>`
-unit that fires the standing rules, and `:1477` builds a `stripe_order` so the
-rules run in dependency order within the single pass.
+`koru_std/store.kz:3165` emits a `__store_stripe_<s>` unit and `:1477` builds a
+dependency-ordered `stripe_order`. The previous revision read the existence of
+that machinery as the existence of fusion. The emitter's own comment, at
+`store.kz:3371`, says otherwise and always has:
 
-The honest caveat is that `simple_iter` — the entry we are closest to being able
-to run — is the **single-query base case, where fusion gives no edge at all**.
-The README already says this: it is the baseline we must match, and the falsifier
-for the iteration contract. Fusion's advantage, if it is real, shows up on
-`schedule` (three systems, overlapping on a component), which is rung 4.
+> stripe unit: `__store_stripe_<s>` fires the standing rules' qsweeps in
+> depends_on topo order (**rung: naive per-rule passes; fusion is a later,
+> semantics-preserving scheduling change**)
 
-`690_123_overlapping_systems_compose_sequentially` pins how far that gets today:
-three sweeps overlapping on a column compose in order, and later systems see
-earlier writes. What has no spelling to even ask for is the outer parallelism —
-the disjointness-proof scheduling that is the no-threads bet itself.
+**MEASURED** (`results/rule-fusion-2026-07-31.json`, 12 ports, N rules over 10k
+rows, interleaved, contention factor 1.47 stated): the stripe is **linear in
+N** — 1.99, 2.06, 2.03 per doubling. It does N corpus reads, not one.
+
+Three things the measurement separates that the claim conflated:
+
+1. **The stripe does N passes.** The headline does not describe today's machinery.
+2. **The fusion dividend is real, and bounded.** Hand-fusing the same rule
+   bodies into one sweep returns 1.04x / 1.52x / 1.98x at N = 2 / 4 / 8 — the
+   direction is validated and grows with N, but it is not Nx, because per-row
+   rule work rides along in the fused pass too. *One corpus read is not one
+   corpus cost.* At 10k rows everything is cache-resident; O13's napkin was
+   1M rows, and that bandwidth-bound regime was never entered.
+3. **The standing-rule tax dwarfs the fusion question.** A stripe pass costs
+   **6-7x** its imperative-sweep twin at every N — identical rule bodies,
+   identical pass count. The difference is per-row: a full-row load regardless
+   of the rule's read set, a doubled handle resolve, and a centralized
+   nine-value write envelope.
+
+That ordering is the actionable output. Retiring the per-row standing-rule tax
+is worth 6-7x at every N; building the deferred scheduling change is worth 2x
+at N=8. The tax is the bigger prize and nobody was looking at it, because the
+argument was about fusion.
 
 ## What the iteration path actually emits today
 
