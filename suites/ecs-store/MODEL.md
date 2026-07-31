@@ -200,8 +200,15 @@ a factor of roughly 1750, from emit shape alone. Nothing about the store's
 design is implicated. The read path simply names the array before it computes
 the index.
 
-The `while` and the four handle round-trips are still true and still worth
-fixing. They are not what this costs.
+**Fixed, and re-measured on a quiet machine.** The store's write family now
+takes a dense row, so a sweep arm passes its loop index straight through and
+there is no resolve left to hoist. The one-column slice went from ~23,900,000
+ns/iter to **4233 ns/iter**, and the full three-column `pos += vel` — which
+could not be compiled at all before the envelope learned the row head — now
+measures **11016 ns/iter**. Both at koru `0251b57b`, load average 7.3, five
+process runs each, checksum oracle verified on every run.
+
+The `while` in the sweep loop is still there and still worth fixing.
 
 ## Reading the board
 

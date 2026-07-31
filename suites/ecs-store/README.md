@@ -28,17 +28,33 @@ win-quotes.
   where fusion gives no edge — this is the baseline std/store must MATCH,
   and the falsifier for the iteration contract. If we lose here, O13's
   "one corpus read" story is decoration.
-  **Status 2026-07-31:** a ONE-COLUMN slice (`px += vx`) is MEASURED
-  in-process — `koru/simple_iter/`, runner `bench-inprocess.sh`, results in
-  `results/latest-inprocess.json`. The full three-column write is BLOCKED on
-  the multi-column `stored` refusal (KORU161, koru pin 690_118); the runner
-  retries it every run. The measured number is dominated by a located
-  codegen defect, not by the store design: the emitted sweep read
-  `store.px[store.__koru_resolve(h)]` makes Zig copy the entire 80 KB
-  column to the stack per row (twice per row — `sample` shows ~100% of
-  runtime in `_platform_memmove`). Hand-hoisting `__koru_resolve` into a
-  temporary in the emitted Zig, nothing else changed, moved one full pass
-  from ~23,300,000 ns to ~13,333 ns on the same machine.
+  **Status 2026-07-31, second measurement — MEASURED, both ports.** Runner
+  `bench-inprocess.sh`, ports in `koru/simple_iter/`, results in
+  `results/latest-inprocess.json` (koru `0251b57b`, load avg 7.3).
+
+  | port | median | min | runs |
+  |---|---|---|---|
+  | `simple_iter` (full `pos += vel`, 3 f64 columns) | **11016 ns/iter** | 10732 | 10732–11183 |
+  | `simple_iter_1col` (`px += vx`, 1 f64 column) | **4233 ns/iter** | 4082 | 4082–4386 |
+
+  The first measurement, hours earlier, put the one-column slice at ~23.9 ms —
+  about 5600× the figure above — and the full workload could not be compiled
+  at all. Two koru changes closed both:
+
+  - the multi-field `stored` envelope learned the bracket row head, so the
+    three-column write compiles (koru pins 690_118, 690_125);
+  - the store's write family now takes a DENSE row, so a sweep arm passes its
+    loop index straight through. That removed the emitted read
+    `store.px[store.__koru_resolve(h)]`, which had been making Zig copy the
+    entire 80 KB column to the stack twice per row — `sample` attributed ~100%
+    of runtime to `_platform_memmove`, roughly 1.6 GB moved per pass.
+
+  **Read the adjacency carefully.** These are in-process Koru `std/time`
+  figures; the baselines are criterion medians. Same machine, different
+  instruments. And the workloads are not the same width: Koru advances three
+  **f64** columns where the reference advances an **f32** vec3, so our port
+  moves twice the bytes per entity. No comparative claim is made here, and
+  none leaves this repo until the instruments are reconciled.
 - `heavy_compute` — 1k × mat4x4 inverted 100×. **Store gaps:** compute-bound
   stripe; mostly Zig codegen quality (kernels board context: C-parity on
   4/6 osprey-class kernels) plus the expression-layer A gap (raw-Zig `.k`
