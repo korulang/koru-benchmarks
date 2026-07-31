@@ -102,7 +102,8 @@ echo "per row; the reference workload advances a full f32 vec3 position per enti
 # Persist a full (unfiltered) board only.
 if [ -z "$FILTER" ]; then
   mkdir -p "$ROOT/results"
-  koru_commit="$(git -C "$(dirname "$KORUC")/../.." rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  koruc_real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$KORUC")"
+  koru_commit="$(git -C "$(dirname "$koruc_real")/../.." rev-parse --short HEAD 2>/dev/null || echo unknown)"
   FRAGS="$TMP/frags" OUT="$ROOT/results/latest-inprocess.json" \
   KORU_COMMIT="$koru_commit" GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   CPU="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)" \
