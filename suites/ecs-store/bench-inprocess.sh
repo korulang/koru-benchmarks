@@ -7,6 +7,11 @@
 # passes and prints total_ns + timed_iters; this runner divides, repeats the
 # process, and reports the median and min across runs.
 #
+# Process runs are INTERLEAVED across ports — run 1 of every port, then run 2
+# of every port, and so on — so every repetition index shares whatever load
+# conditions exist at that moment, instead of one port absorbing a load spike
+# whole. All ports compile first, before any timing.
+#
 # Discipline (same as bench.sh): a binary whose checksum line does not match
 # its expected_*.txt oracle is EXCLUDED from timing — a wrong answer is not a
 # result. A port that fails to compile is reported BLOCKED with the live
@@ -30,10 +35,10 @@ echo "Machine: $(uname -sm) · koruc: $KORUC · runs per port: $RUNS"
 echo "Protocol: in-process std/time around the timed passes; per-iter ns = total_ns / timed_iters; median of $RUNS process runs."
 echo
 
-# measure <name> <src.k> <oracle.txt> — prints one report block; appends a JSON
-# fragment to $TMP/frags on success/blocked.
-measure() {
-  local name="$1" src="$2" oracle="$3"
+# compile_port <name> <src.k> — builds in $TMP/<name>; on failure prints
+# BLOCKED and appends a JSON fragment. Ports that compile join the timed set.
+compile_port() {
+  local name="$1" src="$2"
   local w="$TMP/$name"; rm -rf "$w"; mkdir -p "$w"; cp "$src" "$w/prog.k"
   # koruc clobbers its CWD (backend.zig, a.out, ...) — always build in the tmp dir.
   if ! ( cd "$w" && "$KORUC" build prog.k >compile.log 2>&1 ) || [ ! -x "$w/a.out" ]; then
@@ -43,39 +48,55 @@ measure() {
       "$name" "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$diag")" >> "$TMP/frags"
     return 1
   fi
+}
+
+# run_port <name> <oracle.txt> — one process run: checksum-gated, appends one
+# ns/iter figure to $TMP/ns_<name> and the timed_iters count to $TMP/it_<name>.
+# A checksum mismatch excludes the port from timing entirely (kill file).
+run_port() {
+  local name="$1" oracle="$2"
+  local w="$TMP/$name"
+  [ -f "$TMP/dead_$name" ] && return 0
   local expected; expected="$(sed 's/[[:space:]]*$//' "$oracle")"
-  local iters=() total ns_list=()
-  for _ in $(seq 1 "$RUNS"); do
-    local out; out="$("$w/a.out" 2>/dev/null)"
-    local chk; chk="$(printf '%s\n' "$out" | grep '^checksum ')"
-    if [ "$chk" != "$expected" ]; then
-      printf '%-22s WRONG ANSWER — got "%s", oracle "%s" — excluded from timing\n' "$name" "$chk" "$expected"
-      printf '"%s": {"status": "wrong-answer"},\n' "$name" >> "$TMP/frags"
-      return 1
-    fi
-    # A port with several separately-timed blocks prints one total_ns line per
-    # block (a sweep has no completion branch, so multi-store / multi-phase
-    # passes cannot share one loop); the block totals sum to the per-iteration
-    # figure's numerator.
-    total="$(printf '%s\n' "$out" | awk '/^total_ns /{s+=$2; n++} END{if (n) print s}')"
-    local n; n="$(printf '%s\n' "$out" | awk '/^timed_iters /{print $2}')"
-    [ -n "$total" ] && [ -n "$n" ] && [ "$n" -gt 0 ] || { echo "$name: malformed output" >&2; return 1; }
-    ns_list+=("$(( total / n ))"); iters+=("$n")
-  done
-  local stats; stats="$(printf '%s\n' "${ns_list[@]}" | python3 -c '
+  local out; out="$("$w/a.out" 2>/dev/null)"
+  local chk; chk="$(printf '%s\n' "$out" | grep '^checksum ')"
+  if [ "$chk" != "$expected" ]; then
+    printf '%-22s WRONG ANSWER — got "%s", oracle "%s" — excluded from timing\n' "$name" "$chk" "$expected"
+    printf '"%s": {"status": "wrong-answer"},\n' "$name" >> "$TMP/frags"
+    : > "$TMP/dead_$name"
+    return 0
+  fi
+  # A port with several separately-timed blocks prints one total_ns line per
+  # block (a sweep has no completion branch, so multi-store / multi-phase
+  # passes cannot share one loop); the block totals sum to the per-iteration
+  # figure's numerator.
+  local total; total="$(printf '%s\n' "$out" | awk '/^total_ns /{s+=$2; n++} END{if (n) print s}')"
+  local n; n="$(printf '%s\n' "$out" | awk '/^timed_iters /{print $2}')"
+  [ -n "$total" ] && [ -n "$n" ] && [ "$n" -gt 0 ] || { echo "$name: malformed output" >&2; : > "$TMP/dead_$name"; return 0; }
+  echo "$(( total / n ))" >> "$TMP/ns_$name"
+  echo "$n" > "$TMP/it_$name"
+}
+
+# report_port <name> — median/min across the interleaved runs; prints the
+# report line and appends the JSON fragment.
+report_port() {
+  local name="$1"
+  [ -f "$TMP/ns_$name" ] || return 0
+  local stats; stats="$(python3 -c '
 import sys, statistics
-xs = [int(l) for l in sys.stdin]
-print(f"{statistics.median(xs):.0f} {min(xs)} {xs}")' )"
+xs = [int(l) for l in open(sys.argv[1])]
+print(f"{statistics.median(xs):.0f} {min(xs)} {xs}")' "$TMP/ns_$name")"
   local med rest mn all
   med="${stats%% *}"; rest="${stats#* }"; mn="${rest%% *}"; all="${rest#* }"
+  local iters; iters="$(cat "$TMP/it_$name")"
   printf '%-22s median %s ns/iter · min %s ns/iter · runs %s (timed_iters %s per run)\n' \
-    "$name" "$med" "$mn" "$all" "${iters[0]}"
+    "$name" "$med" "$mn" "$all" "$iters"
   printf '"%s": {"status": "measured", "median_ns_per_iter": %s, "min_ns_per_iter": %s, "runs_ns_per_iter": %s, "timed_iters_per_run": %s, "process_runs": %s},\n' \
-    "$name" "$med" "$mn" "$(printf '%s' "$all" | tr -d ' ')" "${iters[0]}" "$RUNS" >> "$TMP/frags"
+    "$name" "$med" "$mn" "$(printf '%s' "$all" | tr -d ' ')" "$iters" "$RUNS" >> "$TMP/frags"
 }
 
 : > "$TMP/frags"
-ran=0
+names=(); oracles=()
 for dir in "$ROOT"/koru/*/; do
   entry="$(basename "$dir")"
   [ -n "$FILTER" ] && [[ "$entry" != *"$FILTER"* ]] && continue
@@ -84,11 +105,25 @@ for dir in "$ROOT"/koru/*/; do
     base="$(basename "$src" .k)"
     oracle="$dir/expected.txt"
     [[ "$base" == *_1col ]] && oracle="$dir/expected_1col.txt"
-    measure "$base" "$src" "$oracle" || true
-    ran=$((ran+1))
+    if compile_port "$base" "$src"; then
+      names+=("$base"); oracles+=("$oracle")
+    fi
   done
 done
-[ "$ran" -gt 0 ] || { echo "no ports matched" >&2; exit 1; }
+[ "${#names[@]}" -gt 0 ] || { echo "no ports matched (or none compiled)" >&2; exit 1; }
+
+echo "Interleaving $RUNS process runs across: ${names[*]}"
+uptime
+for _ in $(seq 1 "$RUNS"); do
+  for i in "${!names[@]}"; do
+    run_port "${names[$i]}" "${oracles[$i]}"
+  done
+done
+uptime
+echo
+for name in "${names[@]}"; do
+  report_port "$name"
+done
 
 echo
 echo "Reference baselines (criterion medians, ns/iter, $(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["machine"]["cpu"], "·", d["generated_at"][:10])' "$BASELINE")):"
@@ -138,7 +173,7 @@ out = {
                 "cpu": os.environ["CPU"], "load_avg": os.environ.get("LOADAVG", "")},
     "koru": {"commit": os.environ["KORU_COMMIT"]},
     "protocol": {
-        "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs",
+        "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs, interleaved across ports (run 1 of each, run 2 of each, ...)",
         "process_runs": int(os.environ["RUNS"]),
         "warmup": "100 untimed passes in-process before the timed block",
         "flags": "koruc build (final binary ReleaseFast)",
