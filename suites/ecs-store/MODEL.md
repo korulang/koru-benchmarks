@@ -58,7 +58,7 @@ membership.** The ruling dissolves the archetype's two jobs by replacing them
 with two different mechanisms — and this is the part that matters for reading
 the board honestly, because **only one of the two is built.**
 
-### Job one — presence. DESIGNED, not built.
+### Job one — presence. BUILT, because it needed nothing built.
 
 O13 rules that component-presence becomes a predicate column: the query planner
 chooses per-query between an in-loop branch (when the predicate is
@@ -66,16 +66,45 @@ selective-high) and a maintained sparse view (when selective-low). The archetype
 is described as a coarser, global, always-on version of that same trade, paid
 for with migration and fragmentation.
 
-**MEASURED: this machinery does not exist.** `koru_std/store.kz` contains no
-presence, predicate-column, or alive-bit mechanism — the only two hits for those
-words in 8000 lines are unrelated comments. A store's schema today is fixed at
-declaration and every row has every column.
+There is no presence mechanism in `koru_std/store.kz` — no alive-bit, no
+predicate-column feature, nothing named for the job. **That is the ruling
+working, not the ruling missing.** "Capability is DATA, never schema membership"
+means a predicate column is an *ordinary column*, and membership is an ordinary
+guard. Nothing needs to be added because nothing is special.
 
-The consequence for this board is direct and should not be softened:
-`fragmented_iter` and `add_remove_component` are the two entries whose entire
-purpose is to validate or embarrass O13, and **neither can be run at all until
-presence-as-data is built.** The refusal is currently unfalsifiable. That is a
-statement about our progress, not about the ruling being right.
+**MEASURED** — `add_remove_component` runs today, as a whole workload,
+`690_122_presence_column_add_remove`:
+
+```koru
+std/store:new(ents, capacity: 8) { hp: i64, frozen: i64 }
+
+std/store:sweep(ents)
+! sweep a |> std/store:stored { a.frozen: 1 }
+
+std/store:sweep(ents)
+! sweep b when b.frozen == 1 |> std/io:print.ln("frozen {{ b.hp:d }}")
+
+std/store:sweep(ents)
+! sweep c |> std/store:stored { c.frozen: 0 }
+```
+
+Set the bit, the guarded sweep matches; clear it, the guarded sweep matches
+nothing; the rows never move. In an archetype engine both of those writes are
+O(C) row migrations between tables. Here they are one integer store each.
+
+`fragmented_iter` runs too — `690_121_twenty_six_component_stores` declares 26
+stores in one program, sweeps and reads back every one.
+
+**What is genuinely absent is the planner half.** Today presence is *always* the
+in-loop branch: a `when` guard evaluated per row. The maintained sparse view —
+the alternative the planner is supposed to choose when the predicate is
+selective-low — does not exist, and neither does the planner that would choose
+between them. That is rung 3.
+
+So the honest form is narrower than "O13 is unbuilt" and more interesting: the
+part of O13 that dissolves the archetype is real and running; the part that
+*optimises the dissolved form* is not. Both category-boundary entries are
+falsifiable right now.
 
 ### Job two — fusion. BUILT.
 
@@ -93,12 +122,12 @@ The honest caveat is that `simple_iter` — the entry we are closest to being ab
 to run — is the **single-query base case, where fusion gives no edge at all**.
 The README already says this: it is the baseline we must match, and the falsifier
 for the iteration contract. Fusion's advantage, if it is real, shows up on
-`schedule` (three systems, overlapping on a component), which is a rung-4 entry
-and honestly absent.
+`schedule` (three systems, overlapping on a component), which is rung 4.
 
-So the two entries that would show O13 working are both out of reach, in
-opposite directions: one needs a mechanism we have not built, the other needs a
-rung we have not reached.
+`690_123_overlapping_systems_compose_sequentially` pins how far that gets today:
+three sweeps overlapping on a column compose in order, and later systems see
+earlier writes. What has no spelling to even ask for is the outer parallelism —
+the disjointness-proof scheduling that is the no-threads bet itself.
 
 ## What the iteration path actually emits today
 
@@ -150,8 +179,8 @@ and it should be allowed to disagree with this section.
 | `simple_iter` | **yes, ballpark** | Same operation, both sides dense SoA. Single query, so fusion is neutral — the fairest entry on the board. |
 | `simple_insert` | yes, once compound columns exist | vec3/mat4x4 columns are a substrate gap, not a model difference. |
 | `heavy_compute` | yes, once expressible | Compute-bound; mostly Zig codegen quality, and the kernels board is already at C-parity on 4 of 6. |
-| `fragmented_iter` | **no — category boundary** | Measures a cost the model refuses to have. Cannot be run either way until presence-as-data is built. |
-| `add_remove_component` | **no — category boundary** | Their operation is an O(C) row migration; ours would be a presence-bit write. Same name, different operation. Also blocked on presence. |
+| `fragmented_iter` | **no — category boundary** | Measures a cost the model refuses to have. Runnable today (690_121); never quoted as a win. |
+| `add_remove_component` | **no — category boundary** | Their operation is an O(C) row migration; ours is one integer write per row. Same name, categorically different operation. Runnable today (690_122). |
 | `schedule` | not yet | Rung 4. Also the fusion stress case — the three systems overlap on a component, so naive fusion is illegal and it forces stratified firing. |
 | `serialize` | not yet | The whole-store serialization hole; no save/load verb exists. |
 
