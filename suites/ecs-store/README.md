@@ -24,11 +24,21 @@ win-quotes.
   (690_005), declared capacity + `| full` (690_011), batch insert + fused
   cascade (690_019), and **compound field types** — vec3/mat4x4 fields where
   rung one walls at non-i64 (mat4x4 substrate candidate: 2-D cells, 320_057).
-- `simple_iter` — `pos += vel` over 10k rows. **Store gaps:** standing
-  query + the stripe sweep (690_014, (l)/O13). The SINGLE-query base case
+- `simple_iter` — `pos += vel` over 10k rows. The SINGLE-query base case
   where fusion gives no edge — this is the baseline std/store must MATCH,
   and the falsifier for the iteration contract. If we lose here, O13's
   "one corpus read" story is decoration.
+  **Status 2026-07-31:** a ONE-COLUMN slice (`px += vx`) is MEASURED
+  in-process — `koru/simple_iter/`, runner `bench-inprocess.sh`, results in
+  `results/latest-inprocess.json`. The full three-column write is BLOCKED on
+  the multi-column `stored` refusal (KORU161, koru pin 690_118); the runner
+  retries it every run. The measured number is dominated by a located
+  codegen defect, not by the store design: the emitted sweep read
+  `store.px[store.__koru_resolve(h)]` makes Zig copy the entire 80 KB
+  column to the stack per row (twice per row — `sample` shows ~100% of
+  runtime in `_platform_memmove`). Hand-hoisting `__koru_resolve` into a
+  temporary in the emitted Zig, nothing else changed, moved one full pass
+  from ~23,300,000 ns to ~13,333 ns on the same machine.
 - `heavy_compute` — 1k × mat4x4 inverted 100×. **Store gaps:** compute-bound
   stripe; mostly Zig codegen quality (kernels board context: C-parity on
   4/6 osprey-class kernels) plus the expression-layer A gap (raw-Zig `.k`

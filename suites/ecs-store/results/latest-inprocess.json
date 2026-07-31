@@ -1,0 +1,41 @@
+{
+  "suite": "ecs-store",
+  "kind": "koru-inprocess",
+  "generated_at": "2026-07-31T11:46:17Z",
+  "machine": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2 Pro",
+    "load_avg": "7.31 9.98 9.46"
+  },
+  "koru": {
+    "commit": "unknown"
+  },
+  "protocol": {
+    "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs",
+    "process_runs": 5,
+    "warmup": "100 untimed passes in-process before the timed block",
+    "flags": "koruc build (final binary ReleaseFast)",
+    "note": "Baseline numbers in baseline/ are criterion medians \u2014 a different instrument on the same machine. Adjacency is not a comparison. simple_iter_1col writes ONE f64 column per row; the reference workload writes a full f32 vec3 position per entity."
+  },
+  "results": {
+    "simple_iter_1col": {
+      "status": "measured",
+      "median_ns_per_iter": 22272550,
+      "min_ns_per_iter": 21148263,
+      "runs_ns_per_iter": [
+        21148263,
+        23300144,
+        22272550,
+        21883930,
+        23650310
+      ],
+      "timed_iters_per_run": 1000,
+      "process_runs": 5
+    },
+    "simple_iter": {
+      "status": "blocked",
+      "diagnostic": "error[KORU161]: std/store:stored: unknown store 'ents[__koru_srow_e_L33]'"
+    }
+  }
+}
