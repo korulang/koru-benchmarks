@@ -1,0 +1,52 @@
+{
+  "suite": "ecs-store",
+  "kind": "koru-inprocess",
+  "entry": "rule_fusion",
+  "generated_at": "2026-07-31T21:42:51Z",
+  "stamp": "measured-under-load",
+  "machine": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2 Pro",
+    "load_avg_before": "21.76 23.79 23.08",
+    "load_avg_after": "26.21 24.75 23.44"
+  },
+  "koru": { "commit": "3385cdb8" },
+  "protocol": {
+    "instrument": "in-process std/time around the timed passes; per-iter ns = total_ns / timed_iters; median of 5 process runs, interleaved across all ports (run 1 of each, run 2 of each, ...)",
+    "runner": "bench-inprocess.sh rule_fusion simple_iter",
+    "process_runs": 5,
+    "rows": 10000,
+    "timed_frames_per_run": 1000,
+    "warmup_frames": 100,
+    "workload": "rule i: p_i += vx over 10k f64 rows; identical 9-column schema (vx, p1..p8) in every port; rules are unconstrained (no depends_on) and legally fusible per koru 690_202/690_044 (disjoint write sets, shared read column)",
+    "series": {
+      "rf_stripe_N": "N standing [name]d rules fired through std/store:stripe once per frame. Emitted pass structure (read before timing): __store_stripe_<s> chains N per-rule qsweeps in topo order (store.kz:3371 'naive per-rule passes; fusion is a later, semantics-preserving scheduling change'); each qsweep is a while loop whose per-row visit loads ALL 9 columns, resolves the handle twice, and dispatches a centralized 9-value __store_write envelope. N corpus passes per frame, each on the standing-rule row machinery. The stripe_N oracle includes each rule's one root-position firing (690_200).",
+      "rf_sweeps_N": "the same N rule bodies as N separate imperative sweeps, each timed in its own block (a sweep has no completion branch); runner sums the N total_ns lines. N corpus passes per frame on the sweep machinery: for (0..len) loop, per row one __store_envwrite + one announce.",
+      "rf_fused_N": "the same N rule bodies hand-fused into ONE sweep whose stored block writes all N columns per row (multi-column write, koru 690_118/125). ONE corpus pass per frame; per row N __store_envwrite + N announce calls. rf_fused_1 is program-identical to rf_sweeps_1 (same-measurement control: its delta vs rf_sweeps_1 is the noise band under this load)."
+    },
+    "controls": {
+      "simple_iter": { "min_ns": 9384, "median_ns": 10409, "quiet_machine_min_ns": 6390, "contention_factor_min": 1.47, "contention_factor_median": 1.63 },
+      "simple_iter_1col": { "min_ns": 2283, "median_ns": 3539, "quiet_machine_min_ns": 2143, "contention_factor_min": 1.07, "contention_factor_median": 1.65 }
+    },
+    "oracle": "checksum line matched per-port expected file on every process run; no port excluded"
+  },
+  "results_ns_per_frame": {
+    "rf_stripe_1": { "median": 20982, "min": 17472, "runs": [24141, 20982, 17472, 25198, 19118] },
+    "rf_stripe_2": { "median": 39727, "min": 34766, "runs": [34766, 41353, 39727, 44665, 38903] },
+    "rf_stripe_4": { "median": 73996, "min": 71492, "runs": [163204, 73976, 84225, 73996, 71492] },
+    "rf_stripe_8": { "median": 168190, "min": 145401, "runs": [214771, 174395, 145401, 168190, 154062] },
+    "rf_sweeps_1": { "median": 5607, "min": 2703, "runs": [3490, 2703, 5607, 5680, 6147] },
+    "rf_sweeps_2": { "median": 7151, "min": 4840, "runs": [9347, 7151, 7740, 4840, 5010] },
+    "rf_sweeps_4": { "median": 14990, "min": 9862, "runs": [19964, 13226, 16003, 14990, 9862] },
+    "rf_sweeps_8": { "median": 27045, "min": 25412, "runs": [25412, 26759, 37577, 35904, 27045] },
+    "rf_fused_1": { "median": 3865, "min": 3100, "runs": [3100, 4774, 4422, 3865, 3710] },
+    "rf_fused_2": { "median": 8084, "min": 4650, "runs": [4650, 11473, 8084, 7241, 8109] },
+    "rf_fused_4": { "median": 11407, "min": 6507, "runs": [6973, 15125, 12059, 6507, 11407] },
+    "rf_fused_8": { "median": 16048, "min": 12829, "runs": [16048, 12829, 15387, 17520, 19404] },
+    "simple_iter_1col_f32": { "median": 897, "min": 821, "runs": [821, 905, 841, 897, 2481] },
+    "simple_iter_1col": { "median": 3539, "min": 2283, "runs": [2437, 2283, 5516, 4374, 3539] },
+    "simple_iter_f32": { "median": 6723, "min": 4483, "runs": [9502, 4483, 5057, 6997, 6723] },
+    "simple_iter": { "median": 10409, "min": 9384, "runs": [9919, 9384, 10409, 11805, 12588] }
+  }
+}

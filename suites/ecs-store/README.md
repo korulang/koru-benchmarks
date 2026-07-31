@@ -109,6 +109,73 @@ instruments are reconciled.
   the reference ends each entity with one `transform_vector` (9 mul + 6 add,
   ~0.2% of the inversion arithmetic) that the port omits.
 
+### The fusion curve — ours vs ours (rule_fusion, 2026-07-31)
+
+O13's headline: compiled subscriptions mean one stripe pass serves the
+entire workload — "one corpus read regardless of query count." Every entry
+above is single-query, where that claim never meets a clock. `koru/rule_fusion/`
+puts it on one: N standing rules (rule i: `p_i += vx` — disjoint write sets,
+shared read column, legally fusible per koru 690_202/690_044) over one
+10k-row f64 store, identical 9-column schema in every port, three schedules,
+N in 1/2/4/8, interleaved with the simple_iter controls. This is an internal
+comparison — fused vs unfused on our own machinery — not a cross-engine claim.
+
+**Pass structure first, read from the emitted Zig before any clock.** The
+stripe today is NOT one corpus read. `__store_stripe_<s>` chains N per-rule
+qsweeps — koru_std/store.kz:3371 says so itself: "naive per-rule passes;
+fusion is a later, semantics-preserving scheduling change" — and each
+qsweep's per-row visit loads all 9 columns regardless of the rule's read
+set, resolves the row handle twice, and dispatches a centralized 9-value
+write envelope. So `rf_stripe_N` measures the standing-rule machinery at N
+passes, not fusion. `rf_fused_N` — the same N rule bodies hand-fused into
+one sweep's multi-column stored block (koru 690_118/125) — is the schedule
+the fusion claim describes: one `for (0..len)` pass, N envelope writes per
+row. `rf_sweeps_N` is the same work as N separate sweep passes.
+
+**Status 2026-07-31 — MEASURED, stamped measured-under-load** (load avg
+21.8 before, 26.2 after; koruc `3385cdb8`; 5 interleaved process runs;
+checksum oracle green on every run; controls at min: simple_iter 9384 vs
+quiet-machine 6390 = 1.47x contention, simple_iter_1col 2283 vs 2143 =
+1.07x). ns per frame, median (min); full runs in
+`results/rule-fusion-2026-07-31.json`.
+
+| N | rf_stripe_N (N standing-rule passes) | rf_sweeps_N (N sweep passes) | rf_fused_N (1 sweep pass) |
+|---|---|---|---|
+| 1 | 20982 (17472) | 5607 (2703) | 3865 (3100) |
+| 2 | 39727 (34766) | 7151 (4840) | 8084 (4650) |
+| 4 | 73996 (71492) | 14990 (9862) | 11407 (6507) |
+| 8 | 168190 (145401) | 27045 (25412) | 16048 (12829) |
+
+What the curve says, at the mins (the load-robust end; `rf_fused_1` and
+`rf_sweeps_1` are the same program text, so their spread — 3100 vs 2703 —
+is the noise band, and every trend below exceeds it):
+
+- **The stripe is linear in N to two digits:** 17.5k → 34.8k → 71.5k →
+  145.4k, ratio per doubling 1.99 / 2.06 / 2.03. "One corpus read
+  regardless of query count" is not what the machinery does today; it does
+  N reads.
+- **The standing-rule tax, per pass:** rf_stripe_N / rf_sweeps_N = 6.5x
+  (N=1), 7.2x (N=2), 7.2x (N=4), 5.7x (N=8) — identical rule bodies,
+  identical pass count, different row machinery (full-row load + double
+  handle-resolve + centralized write vs direct envelope write).
+- **The fusion dividend, isolated on the sweep machinery:** rf_sweeps_N /
+  rf_fused_N = 1.04x (N=2), 1.52x (N=4), 1.98x (N=8) — it widens with N,
+  exactly the fusion signature.
+- **Fused is not flat:** 3100 → 12829 across 8x rules (4.1x), because the
+  per-row rule work (N envelope writes + N announces) rides along; only
+  the traversal and the shared vx read are shared. One corpus *read* is
+  not one corpus *cost*, and at 10k rows the columns are cache-resident —
+  the bandwidth-bound regime the O13 napkin describes (1M+ rows) would
+  need a bigger corpus to enter.
+
+Verdict in this board's own terms: the direction is validated — one pass
+in place of eight returns 2.0x on this rule family, growing with N — and
+the headline is embarrassed twice: the stripe O13 says fuses runs N passes
+today, and each of those passes costs 6–7x its imperative twin before
+fusion enters the picture. The deferred scheduling change at
+store.kz:3371 is worth 2x at N=8; retiring the standing-rule row tax is
+worth 6–7x at every N.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype
