@@ -214,9 +214,9 @@ The `while` in the sweep loop is still there and still worth fixing.
 
 | entry | comparable? | why |
 |---|---|---|
-| `simple_iter` | **yes, ballpark** | Same operation, both sides dense SoA. Single query, so fusion is neutral — the fairest entry on the board. |
-| `simple_insert` | yes, once compound columns exist | vec3/mat4x4 columns are a substrate gap, not a model difference. |
-| `heavy_compute` | yes, once expressible | Compute-bound; mostly Zig codegen quality, and the kernels board is already at C-parity on 4 of 6. |
+| `simple_iter` | **yes, ballpark** | Same operation, both sides dense SoA. Single query, so fusion is neutral — the fairest entry on the board. MEASURED, both widths. |
+| `simple_insert` | **yes, ballpark** | MEASURED, both widths, via the row flattened to 25 SoA scalar columns (690_119). Compound column TYPES (a vec3/mat4x4-valued column) are still a substrate gap, not a model difference — the flattening is the spelling a consumer writes today. One store per timed pass: no drain idiom exists (README defect list). |
+| `heavy_compute` | **yes, ballpark** | MEASURED, both widths. Compute-bound; the det-once factoring (690_128) is load-bearing — one determinant expansion per row per inversion against the naive form's seventeen. Reference is rayon-parallel; ours single-threaded, stated at the entry. |
 | `fragmented_iter` | **no — category boundary** | Measures a cost the model refuses to have. Runnable today (690_121); never quoted as a win. |
 | `add_remove_component` | **no — category boundary** | Their operation is an O(C) row migration; ours is one integer write per row. Same name, categorically different operation. Runnable today (690_122). |
 | `schedule` | not yet | Rung 4. Also the fusion stress case — the three systems overlap on a component, so naive fusion is illegal and it forces stratified firing. |

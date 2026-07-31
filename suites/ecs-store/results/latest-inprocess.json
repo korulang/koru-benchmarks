@@ -1,77 +1,161 @@
 {
   "suite": "ecs-store",
   "kind": "koru-inprocess",
-  "generated_at": "2026-07-31T18:08:01Z",
+  "generated_at": "2026-07-31T19:09:39Z",
   "machine": {
     "os": "Darwin",
     "arch": "arm64",
     "cpu": "Apple M2 Pro",
-    "load_avg": "6.28 22.13 41.83"
+    "load_avg": "6.20 10.62 15.68"
   },
   "koru": {
-    "commit": "333f8bb3"
+    "commit": "d49f3e31"
   },
   "protocol": {
     "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs, interleaved across ports (run 1 of each, run 2 of each, ...)",
     "process_runs": 5,
-    "warmup": "100 untimed passes in-process before the timed block",
+    "warmup": "untimed in-process warmup as stated in each port's header (simple_iter family: 100 passes; simple_insert: one full pass into a separate warmup store; heavy_compute: 300 sweeps = 3 iterations)",
     "flags": "koruc build (final binary ReleaseFast)",
-    "note": "Baseline numbers in baseline/ are criterion medians \u2014 a different instrument on the same machine. Adjacency is not a comparison. simple_iter_1col writes ONE f64 column per row; the reference workload writes a full f32 vec3 position per entity. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
+    "note": "Baseline numbers in baseline/ are criterion medians \u2014 a different instrument on the same machine. Adjacency is not a comparison. The reference components are f32: each port's _f32 variant matches that width, the f64 variant runs the same workload at double column width. simple_iter_1col writes ONE column per row where the full workload writes three. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
     "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent sweeps and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md."
   },
   "results": {
     "add_remove_component": {
       "status": "measured",
-      "median_ns_per_iter": 1757,
-      "min_ns_per_iter": 1456,
+      "median_ns_per_iter": 1725,
+      "min_ns_per_iter": 1666,
       "runs_ns_per_iter": [
-        1456,
-        1608,
-        1808,
-        1767,
-        1757
+        1671,
+        1791,
+        1725,
+        1666,
+        1813
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "fragmented_iter": {
       "status": "measured",
-      "median_ns_per_iter": 132,
-      "min_ns_per_iter": 127,
+      "median_ns_per_iter": 131,
+      "min_ns_per_iter": 130,
       "runs_ns_per_iter": [
-        138,
-        127,
-        136,
-        127,
-        132
+        157,
+        130,
+        133,
+        130,
+        131
       ],
       "timed_iters_per_run": 900,
       "process_runs": 5
     },
+    "heavy_compute_f32": {
+      "status": "measured",
+      "median_ns_per_iter": 551500,
+      "min_ns_per_iter": 547400,
+      "runs_ns_per_iter": [
+        558200,
+        547400,
+        551300,
+        551500,
+        560000
+      ],
+      "timed_iters_per_run": 10,
+      "process_runs": 5
+    },
+    "heavy_compute": {
+      "status": "measured",
+      "median_ns_per_iter": 1070800,
+      "min_ns_per_iter": 1050500,
+      "runs_ns_per_iter": [
+        1067800,
+        1050500,
+        1077400,
+        1076500,
+        1070800
+      ],
+      "timed_iters_per_run": 10,
+      "process_runs": 5
+    },
+    "simple_insert_f32": {
+      "status": "measured",
+      "median_ns_per_iter": 120800,
+      "min_ns_per_iter": 112200,
+      "runs_ns_per_iter": [
+        121600,
+        112200,
+        122600,
+        115400,
+        120800
+      ],
+      "timed_iters_per_run": 5,
+      "process_runs": 5
+    },
+    "simple_insert": {
+      "status": "measured",
+      "median_ns_per_iter": 184000,
+      "min_ns_per_iter": 177000,
+      "runs_ns_per_iter": [
+        180400,
+        184000,
+        193600,
+        177000,
+        188600
+      ],
+      "timed_iters_per_run": 5,
+      "process_runs": 5
+    },
+    "simple_iter_1col_f32": {
+      "status": "measured",
+      "median_ns_per_iter": 818,
+      "min_ns_per_iter": 796,
+      "runs_ns_per_iter": [
+        809,
+        796,
+        820,
+        851,
+        818
+      ],
+      "timed_iters_per_run": 1000,
+      "process_runs": 5
+    },
     "simple_iter_1col": {
       "status": "measured",
-      "median_ns_per_iter": 2189,
-      "min_ns_per_iter": 2143,
+      "median_ns_per_iter": 2193,
+      "min_ns_per_iter": 2161,
       "runs_ns_per_iter": [
-        2233,
-        2143,
-        2189,
-        2194,
-        2152
+        2198,
+        2193,
+        2161,
+        2277,
+        2165
+      ],
+      "timed_iters_per_run": 1000,
+      "process_runs": 5
+    },
+    "simple_iter_f32": {
+      "status": "measured",
+      "median_ns_per_iter": 4438,
+      "min_ns_per_iter": 4411,
+      "runs_ns_per_iter": [
+        4432,
+        4471,
+        4442,
+        4411,
+        4438
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "simple_iter": {
       "status": "measured",
-      "median_ns_per_iter": 6453,
-      "min_ns_per_iter": 6390,
+      "median_ns_per_iter": 6614,
+      "min_ns_per_iter": 6408,
       "runs_ns_per_iter": [
-        6476,
-        6390,
-        6407,
-        6453,
-        6457
+        6415,
+        6408,
+        6614,
+        7324,
+        7201
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
