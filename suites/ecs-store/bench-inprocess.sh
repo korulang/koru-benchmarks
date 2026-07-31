@@ -103,8 +103,9 @@ for dir in "$ROOT"/koru/*/; do
   for src in "$dir"*.k; do
     [ -f "$src" ] || continue
     base="$(basename "$src" .k)"
-    oracle="$dir/expected.txt"
-    [[ "$base" == *_1col ]] && oracle="$dir/expected_1col.txt"
+    # Every port names its own oracle: <basename>.expected.txt beside the source.
+    oracle="$dir/$base.expected.txt"
+    [ -f "$oracle" ] || { echo "$base: missing oracle $oracle" >&2; exit 2; }
     if compile_port "$base" "$src"; then
       names+=("$base"); oracles+=("$oracle")
     fi
@@ -130,8 +131,15 @@ echo "Reference baselines (criterion medians, ns/iter, $(python3 -c 'import json
 python3 -c '
 import json, sys
 d = json.load(open(sys.argv[1]))
-for eng, ns in sorted(d["results"]["simple_iter"].items(), key=lambda kv: kv[1]):
-    print(f"  {eng:<18} {ns:>10.1f} ns/iter  (criterion median, full pos += vel)")' "$BASELINE"
+ops = {
+    "simple_iter": "full pos += vel, 10k entities",
+    "simple_insert": "10k entities x 4 components into a fresh world",
+    "heavy_compute": "1k entities, mat4 inverted 100x (rayon-parallel upstream)",
+}
+for entry, op in ops.items():
+    print(f"  {entry} ({op}):")
+    for eng, ns in sorted(d["results"][entry].items(), key=lambda kv: kv[1]):
+        print(f"    {eng:<18} {ns:>10.1f} ns/iter  (criterion median)")' "$BASELINE"
 echo
 echo "Category-boundary entries — the operations differ, not just the engines (see MODEL.md)."
 echo "fragmented_iter: reference = one query walking 26 fragmented archetype tables;"
@@ -150,8 +158,10 @@ for entry in ("fragmented_iter", "add_remove_component"):
 echo
 echo "Instruments: reference = criterion 0.3 median via cargo bench (upstream harness);"
 echo "koru = in-process std/time total over the timed passes, divided by pass count."
-echo "Same machine, different instruments. simple_iter_1col advances ONE f64 column"
-echo "per row; the reference workload advances a full f32 vec3 position per entity."
+echo "Same machine, different instruments. Widths: the reference components are f32;"
+echo "each koru port's _f32 variant matches that width, the f64 variant runs the same"
+echo "workload at double column width. simple_iter_1col advances ONE column per row"
+echo "(the full workload advances three)."
 
 # Persist a full (unfiltered) board only.
 if [ -z "$FILTER" ]; then
@@ -175,9 +185,9 @@ out = {
     "protocol": {
         "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs, interleaved across ports (run 1 of each, run 2 of each, ...)",
         "process_runs": int(os.environ["RUNS"]),
-        "warmup": "100 untimed passes in-process before the timed block",
+        "warmup": "untimed in-process warmup as stated in each port's header (simple_iter family: 100 passes; simple_insert: one full pass into a separate warmup store; heavy_compute: 300 sweeps = 3 iterations)",
         "flags": "koruc build (final binary ReleaseFast)",
-        "note": "Baseline numbers in baseline/ are criterion medians — a different instrument on the same machine. Adjacency is not a comparison. simple_iter_1col writes ONE f64 column per row; the reference workload writes a full f32 vec3 position per entity. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
+        "note": "Baseline numbers in baseline/ are criterion medians — a different instrument on the same machine. Adjacency is not a comparison. The reference components are f32: each port's _f32 variant matches that width, the f64 variant runs the same workload at double column width. simple_iter_1col writes ONE column per row where the full workload writes three. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
         "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent sweeps and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md.",
     },
     "results": json.loads(frags),
