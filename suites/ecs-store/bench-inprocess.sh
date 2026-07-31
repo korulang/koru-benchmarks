@@ -27,7 +27,9 @@ KORUC="${KORUC:-/usr/local/bin/koruc}"
 [ -x "$KORUC" ] || { echo "koruc not found (set KORUC)" >&2; exit 2; }
 RUNS="${KORU_BENCH_RUNS:-5}"
 BASELINE="$ROOT/baseline/2026-07-05-m2pro.json"
-FILTER="${1:-}"
+# Any number of filter args; an entry directory is included if its name
+# contains ANY of them. No args = full board (the only mode that persists).
+FILTER="$*"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
@@ -99,7 +101,11 @@ print(f"{statistics.median(xs):.0f} {min(xs)} {xs}")' "$TMP/ns_$name")"
 names=(); oracles=()
 for dir in "$ROOT"/koru/*/; do
   entry="$(basename "$dir")"
-  [ -n "$FILTER" ] && [[ "$entry" != *"$FILTER"* ]] && continue
+  if [ -n "$FILTER" ]; then
+    match=0
+    for f in $FILTER; do [[ "$entry" == *"$f"* ]] && match=1; done
+    [ "$match" -eq 1 ] || continue
+  fi
   for src in "$dir"*.k; do
     [ -f "$src" ] || continue
     base="$(basename "$src" .k)"
