@@ -53,7 +53,11 @@ measure() {
       printf '"%s": {"status": "wrong-answer"},\n' "$name" >> "$TMP/frags"
       return 1
     fi
-    total="$(printf '%s\n' "$out" | awk '/^total_ns /{print $2}')"
+    # A port with several separately-timed blocks prints one total_ns line per
+    # block (a sweep has no completion branch, so multi-store / multi-phase
+    # passes cannot share one loop); the block totals sum to the per-iteration
+    # figure's numerator.
+    total="$(printf '%s\n' "$out" | awk '/^total_ns /{s+=$2; n++} END{if (n) print s}')"
     local n; n="$(printf '%s\n' "$out" | awk '/^timed_iters /{print $2}')"
     [ -n "$total" ] && [ -n "$n" ] && [ "$n" -gt 0 ] || { echo "$name: malformed output" >&2; return 1; }
     ns_list+=("$(( total / n ))"); iters+=("$n")
@@ -94,6 +98,21 @@ d = json.load(open(sys.argv[1]))
 for eng, ns in sorted(d["results"]["simple_iter"].items(), key=lambda kv: kv[1]):
     print(f"  {eng:<18} {ns:>10.1f} ns/iter  (criterion median, full pos += vel)")' "$BASELINE"
 echo
+echo "Category-boundary entries — the operations differ, not just the engines (see MODEL.md)."
+echo "fragmented_iter: reference = one query walking 26 fragmented archetype tables;"
+echo "koru = 26 independent store sweeps. add_remove_component: reference = per-entity"
+echo "row migration between archetype tables, twice; koru = one i64 presence-column"
+echo "write per row, twice. Numbers are printed side by side and left uncompared."
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+for entry in ("fragmented_iter", "add_remove_component"):
+    if entry not in d["results"]:
+        continue
+    print(f"  {entry}:")
+    for eng, ns in sorted(d["results"][entry].items(), key=lambda kv: kv[1]):
+        print(f"    {eng:<18} {ns:>12.1f} ns/iter  (criterion median, their operation)")' "$BASELINE"
+echo
 echo "Instruments: reference = criterion 0.3 median via cargo bench (upstream harness);"
 echo "koru = in-process std/time total over the timed passes, divided by pass count."
 echo "Same machine, different instruments. simple_iter_1col advances ONE f64 column"
@@ -123,7 +142,8 @@ out = {
         "process_runs": int(os.environ["RUNS"]),
         "warmup": "100 untimed passes in-process before the timed block",
         "flags": "koruc build (final binary ReleaseFast)",
-        "note": "Baseline numbers in baseline/ are criterion medians — a different instrument on the same machine. Adjacency is not a comparison. simple_iter_1col writes ONE f64 column per row; the reference workload writes a full f32 vec3 position per entity.",
+        "note": "Baseline numbers in baseline/ are criterion medians — a different instrument on the same machine. Adjacency is not a comparison. simple_iter_1col writes ONE f64 column per row; the reference workload writes a full f32 vec3 position per entity. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
+        "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent sweeps and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md.",
     },
     "results": json.loads(frags),
 }
