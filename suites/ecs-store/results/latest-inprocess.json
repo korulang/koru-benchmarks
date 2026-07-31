@@ -6,7 +6,8 @@
     "os": "Darwin",
     "arch": "arm64",
     "cpu": "Apple M2 Pro",
-    "load_avg": "65.86 26.44 15.68"
+    "load_avg": "65.86 26.44 15.68",
+    "load_avg_note": "TAKEN UNDER HEAVY LOAD (load_avg 65.86 at capture) - a full koru regression board was live on the machine. The absolute figures are SOFT and want a re-run on a quiet machine; the ~1750x hoist probe survives any load noise because it is a ratio measured under the same conditions."
   },
   "koru": {
     "commit": "e6134ef8"
@@ -20,7 +21,7 @@
   },
   "results": {
     "simple_iter_1col": {
-      "status": "measured",
+      "status": "measured-under-load",
       "median_ns_per_iter": 23901689,
       "min_ns_per_iter": 22846043,
       "runs_ns_per_iter": [

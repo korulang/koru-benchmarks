@@ -164,13 +164,44 @@ while (__koru_si < __koru_store_ents.len) : (__koru_si += 1) {
 3. **The read-only path is already clean.** Whatever this costs, it is the
    *write* path specifically.
 
-**What we are deliberately not claiming:** that this blocks vectorization. The
-whole body is `pub inline fn` (**MEASURED** — four of them in the emitted file),
-so LLVM sees through the call boundary and may well fold some or all of the
-round-trip; the `switch (field)` in the write handler is dispatched on a literal
-`0` and should fold entirely. Reading the emitted source tells us what we *asked
-for*, not what the CPU *runs*. The ballpark measurement is what adjudicates it,
-and it should be allowed to disagree with this section.
+**The measurement disagreed with this section, and it was right to.**
+
+The previous revision said we were not claiming the round-trip blocks
+vectorization — the body is all `pub inline fn`, so LLVM might fold it. That was
+the correct caution and it was aimed at the wrong thing. The cost is not a
+missed vectorization. It is far larger and entirely mechanical.
+
+A store's columns are fixed-size arrays held **by value** inside one global
+struct. So `__koru_store_ents.px` is an 80,000-byte aggregate when capacity is
+10,000 f64, and the sweep read is emitted as:
+
+```zig
+__koru_store_ents.px[__koru_store_ents.__koru_resolve(h)]
+  + __koru_store_ents.vx[__koru_store_ents.__koru_resolve(h)]
+```
+
+The index is a *call on the same mutable global*, evaluated after the array
+field is named. Zig must therefore materialise the whole column before applying
+the index — **MEASURED**: `sample` puts ~100% of runtime in `_platform_memmove`,
+and the disassembly shows two `memcpy`s of `0x13880` = 80,000 bytes **per row**.
+That is ~1.6 GB moved per pass over 10,000 rows.
+
+The store's own apply path is immune, and the contrast is the proof: it hoists
+first, then indexes.
+
+```zig
+const __koru_r = __koru_store_ents.__koru_resolve(row);
+__koru_store_ents.px[__koru_r] = value_0;
+```
+
+**Controlled probe:** hand-hoisting the resolve into a temporary in the emitted
+Zig, changing nothing else, moved one pass from ~23,300,000 ns to ~13,333 ns —
+a factor of roughly 1750, from emit shape alone. Nothing about the store's
+design is implicated. The read path simply names the array before it computes
+the index.
+
+The `while` and the four handle round-trips are still true and still worth
+fixing. They are not what this costs.
 
 ## Reading the board
 
