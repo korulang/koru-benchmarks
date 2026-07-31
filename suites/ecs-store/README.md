@@ -34,8 +34,16 @@ win-quotes.
 
   | port | median | min | runs |
   |---|---|---|---|
-  | `simple_iter` (full `pos += vel`, 3 f64 columns) | **11016 ns/iter** | 10732 | 10732–11183 |
-  | `simple_iter_1col` (`px += vx`, 1 f64 column) | **4233 ns/iter** | 4082 | 4082–4386 |
+  | `simple_iter` (full `pos += vel`, 3 f64 columns) | **6517 ns/iter** | 6404 | 6404–6605 |
+  | `simple_iter_1col` (`px += vx`, 1 f64 column) | **2234 ns/iter** | 2171 | 2171–2266 |
+
+  Three measurements, same machine, same day, same workload:
+
+  | | 1-col | full `pos += vel` |
+  |---|---|---|
+  | first (before any fix) | 23,900,000 ns | did not compile |
+  | after the dense-row write family | 4233 ns | 11016 ns |
+  | after the sweep loop became a `for` | **2234 ns** | **6517 ns** |
 
   The first measurement, hours earlier, put the one-column slice at ~23.9 ms —
   about 5600× the figure above — and the full workload could not be compiled
