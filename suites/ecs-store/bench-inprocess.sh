@@ -87,7 +87,7 @@ run_port() {
     return 0
   fi
   # A port with several separately-timed blocks prints one total_ns line per
-  # block (a sweep has no completion branch, so multi-store / multi-phase
+  # block (a query has no completion branch, so multi-store / multi-phase
   # passes cannot share one loop); the block totals sum to the per-iteration
   # figure's numerator.
   local total; total="$(printf '%s\n' "$out" | awk '/^total_ns /{s+=$2; n++} END{if (n) print s}')"
@@ -185,7 +185,7 @@ for entry, op in ops.items():
 echo
 echo "Category-boundary entries — the operations differ, not just the engines (see MODEL.md)."
 echo "fragmented_iter: reference = one query walking 26 fragmented archetype tables;"
-echo "koru = 26 independent store sweeps. add_remove_component: reference = per-entity"
+echo "koru = 26 independent store queries. add_remove_component: reference = per-entity"
 echo "row migration between archetype tables, twice; koru = one i64 presence-column"
 echo "write per row, twice. Numbers are printed side by side and left uncompared."
 python3 -c '
@@ -227,10 +227,10 @@ out = {
     "protocol": {
         "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs, interleaved across ports (run 1 of each, run 2 of each, ...)",
         "process_runs": int(os.environ["RUNS"]),
-        "warmup": "untimed in-process warmup as stated in each port's header (simple_iter family: 100 passes; simple_insert: one full pass into a separate warmup store; heavy_compute: 300 sweeps = 3 iterations)",
+        "warmup": "untimed in-process warmup as stated in each port's header (simple_iter family: 100 passes; simple_insert: one full pass into a separate warmup store; heavy_compute: 300 passes = 3 iterations)",
         "flags": "koruc build (final binary ReleaseFast)",
         "note": "Baseline numbers in baseline/ are criterion medians — a different instrument on the same machine. Adjacency is not a comparison. The reference components are f32: each port's _f32 variant matches that width, the f64 variant runs the same workload at double column width. simple_iter_1col writes ONE column per row where the full workload writes three. A port may print several total_ns lines (one per separately-timed block); they are summed before dividing by timed_iters.",
-        "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent sweeps and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md.",
+        "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent queries and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md.",
     },
     "results": json.loads(frags),
 }

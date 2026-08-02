@@ -24,8 +24,11 @@ in this suite had compiled for a day and the board did not know. The ports
 are migrated (`std/store:sweep` / `! sweep e` → `std/store:query` /
 `! query e`; `std/store:query` / `! query s` → `std/store:rule` / `! row s`)
 and re-verified against their oracles: **22/22 compile and checksum exactly**
-at koru `9388426a`. The timing tables below were taken at `d49f3e31`, BEFORE
-the rename; they are not re-measured here. This pass is correctness only.
+at koru `9388426a`, then RE-MEASURED end to end on a quiet machine (load avg
+4.0, the calmest this board has ever had). The one-to-one tier reproduced
+within 2% — the rename is measurably free. The fusion curve did not: its
+2026-07-31 run was taken at load avg 21.8–26.2 and its own identity control
+says so, so those numbers are corrected below rather than confirmed.
 The `rf_sweeps_N` port filenames keep the old word — renaming them would
 break the result JSON keys the fusion table quotes.
 
@@ -48,18 +51,25 @@ instruments are reconciled.
   where fusion gives no edge — this is the baseline std/store must MATCH,
   and the falsifier for the iteration contract. If we lose here, O13's
   "one corpus read" story is decoration.
-  **Status 2026-07-31, third measurement — MEASURED, both widths.** Runner
-  `bench-inprocess.sh`, ports in `koru/simple_iter/`, results in
-  `results/latest-inprocess.json` (koru `d49f3e31`, load avg 6.2–15.7,
-  interleaved controls at their quiet-machine minima: 6408 vs 6390,
-  2161 vs 2143).
+  **Status 2026-08-02, fourth measurement — RE-MEASURED post-rename, both
+  widths.** Runner `bench-inprocess.sh`, ports in `koru/simple_iter/`,
+  results in `results/latest-inprocess.json` (koru `9388426a`, load avg
+  4.0/4.2/4.8 — the quietest machine any board here has had; 5 interleaved
+  process runs across all 22 ports). The previous figures are kept in the
+  right-hand column: the surface rename is measurably free.
 
-  | port | median | min | runs |
-  |---|---|---|---|
-  | `simple_iter_f32` (full `pos += vel`) | **4438 ns/iter** | 4411 | 4411–4471 |
-  | `simple_iter` (full `pos += vel`, f64) | **6614 ns/iter** | 6408 | 6408–7324 |
-  | `simple_iter_1col_f32` (`px += vx`) | **818 ns/iter** | 796 | 796–851 |
-  | `simple_iter_1col` (`px += vx`, f64) | **2193 ns/iter** | 2161 | 2161–2277 |
+  | port | median | min | runs | was (`d49f3e31`, load 6.2–15.7) |
+  |---|---|---|---|---|
+  | `simple_iter_f32` (full `pos += vel`) | **4397 ns/iter** | 4369 | 4369–4434 | 4438 |
+  | `simple_iter` (full `pos += vel`, f64) | **6507 ns/iter** | 6360 | 6360–6617 | 6614 |
+  | `simple_iter_1col_f32` (`px += vx`) | **799 ns/iter** | 791 | 791–815 | 818 |
+  | `simple_iter_1col` (`px += vx`, f64) | **2176 ns/iter** | 2166 | 2166–2358 | 2193 |
+
+  Every entry in this tier lands within 2% of its pre-rename figure
+  (`simple_insert`'s median moves 5%, but its min moves 1.4% and it times
+  only 5 iterations per run — that entry's spread has always been its own).
+  Reproduced, not merely re-run: the ports were rewritten onto a renamed
+  surface between the two boards.
 
   Three f64 measurements, same machine, same workload, one day apart at the
   ends:
@@ -85,19 +95,20 @@ instruments are reconciled.
   `Position/Rotation/Velocity(vec3)`), flattened to 25 SoA scalar columns
   (koru pin 690_119 pins the row; compound column TYPES — a vec3/mat4x4-valued
   column — remain uninvented surface, 690_020's residue).
-  **Status 2026-07-31 — MEASURED, both widths.** Ports in
+  **Status 2026-08-02 — RE-MEASURED, both widths.** Ports in
   `koru/simple_insert/`, same run and controls as above. One timed pass =
   10k inserts into a store no insert has touched — one store per timed pass,
   because the reference makes a fresh world per criterion iteration and
   because a Koru store cannot be drained and reused today (defect list
   below). Their world is heap-allocated inside the iteration; our stores are
   static, so the timed region holds first-touch page faults but no
-  allocation.
+  allocation. Five timed iterations per run makes this the noisiest entry on
+  the board; quote the min beside the median.
 
-  | port | median | min | runs |
-  |---|---|---|---|
-  | `simple_insert_f32` | **120800 ns/iter** | 112200 | 112200–122600 |
-  | `simple_insert` (f64) | **184000 ns/iter** | 177000 | 177000–193600 |
+  | port | median | min | runs | was (`d49f3e31`) |
+  |---|---|---|---|---|
+  | `simple_insert_f32` | **121600 ns/iter** | 111800 | 111800–131400 | 120800 |
+  | `simple_insert` (f64) | **193400 ns/iter** | 179400 | 179400–195200 | 184000 |
 
 - `heavy_compute` — 1k entities, mat4x4 inverted 100× per entity per
   iteration, in place. Expressible through 690_126–690_129: the stored block
@@ -106,24 +117,24 @@ instruments are reconciled.
   where the naive 690_127 form pays seventeen), then copies the staging
   columns back over the matrix in the SAME block, legal because a plural
   block's entries land in written order (690_126).
-  **Status 2026-07-31 — MEASURED, both widths.** Ports in
+  **Status 2026-08-02 — RE-MEASURED, both widths.** Ports in
   `koru/heavy_compute/`, same run and controls as above. One iteration = 100
-  sweeps; the checksum sums the matrix, staging and det columns, so a run
-  whose sweeps did nothing cannot pass the oracle. An earlier scratch probe
+  passes; the checksum sums the matrix, staging and det columns, so a run
+  whose passes did nothing cannot pass the oracle. An earlier scratch probe
   of the naive 17-expansion form measured ~20 ms per iteration; the
   det-factored form below is that same workload at one expansion per row.
 
-  | port | median | min | runs |
-  |---|---|---|---|
-  | `heavy_compute_f32` | **551500 ns/iter** | 547400 | 547400–560000 |
-  | `heavy_compute` (f64) | **1070800 ns/iter** | 1050500 | 1050500–1077400 |
+  | port | median | min | runs | was (`d49f3e31`) |
+  |---|---|---|---|---|
+  | `heavy_compute_f32` | **545900 ns/iter** | 532300 | 532300–554300 | 551500 |
+  | `heavy_compute` (f64) | **1050100 ns/iter** | 1037900 | 1037900–1055600 | 1070800 |
 
   Two protocol differences beyond the instrument, stated: the reference
   iterates rayon-parallel batches of 64 where ours is single-threaded, and
   the reference ends each entity with one `transform_vector` (9 mul + 6 add,
   ~0.2% of the inversion arithmetic) that the port omits.
 
-### The fusion curve — ours vs ours (rule_fusion, 2026-07-31)
+### The fusion curve — ours vs ours (rule_fusion, re-measured 2026-08-02)
 
 O13's headline: compiled subscriptions mean one stripe pass serves the
 entire workload — "one corpus read regardless of query count." Every entry
@@ -142,53 +153,73 @@ qsweep's per-row visit loads all 9 columns regardless of the rule's read
 set, resolves the row handle twice, and dispatches a centralized 9-value
 write envelope. So `rf_stripe_N` measures the standing-rule machinery at N
 passes, not fusion. `rf_fused_N` — the same N rule bodies hand-fused into
-one sweep's multi-column stored block (koru 690_118/125) — is the schedule
+one query's multi-column stored block (koru 690_118/125) — is the schedule
 the fusion claim describes: one `for (0..len)` pass, N envelope writes per
-row. `rf_sweeps_N` is the same work as N separate sweep passes.
+row. `rf_sweeps_N` is the same work as N separate query passes.
 
-**Status 2026-07-31 — MEASURED, stamped measured-under-load** (load avg
-21.8 before, 26.2 after; koruc `3385cdb8`; 5 interleaved process runs;
-checksum oracle green on every run; controls at min: simple_iter 9384 vs
-quiet-machine 6390 = 1.47x contention, simple_iter_1col 2283 vs 2143 =
-1.07x). ns per frame, median (min); full runs in
-`results/rule-fusion-2026-07-31.json`.
+**Status 2026-08-02 — RE-MEASURED on a quiet machine, and the previous
+numbers do not survive it.** Load avg 4.0/4.2/4.8 (koru `9388426a`, 5
+interleaved process runs across all 22 ports, checksum oracle green on every
+run); full runs in `results/latest-inprocess.json`. The 2026-07-31 figures
+were stamped `measured-under-load` at load avg 21.8–26.2 and are kept in the
+right-hand columns as the cautionary half of the table.
 
-| N | rf_stripe_N (N standing-rule passes) | rf_sweeps_N (N sweep passes) | rf_fused_N (1 sweep pass) |
-|---|---|---|---|
-| 1 | 20982 (17472) | 5607 (2703) | 3865 (3100) |
-| 2 | 39727 (34766) | 7151 (4840) | 8084 (4650) |
-| 4 | 73996 (71492) | 14990 (9862) | 11407 (6507) |
-| 8 | 168190 (145401) | 27045 (25412) | 16048 (12829) |
+**The identity control is what condemns them.** `rf_sweeps_1` and
+`rf_fused_1` are the SAME PROGRAM TEXT — one rule, one pass, hand-fusing
+nothing. Any gap between them is pure instrument noise. Under load they read
+5607 vs 3865, a **1.45x** spread on identical programs. On the quiet machine
+they read 2154 vs 2134: **1.009x**. So the old board's noise band was wider
+than most of the effects it was quoting, and every ratio derived from it has
+to be re-derived rather than re-stated.
 
-What the curve says, at the mins (the load-robust end; `rf_fused_1` and
-`rf_sweeps_1` are the same program text, so their spread — 3100 vs 2703 —
-is the noise band, and every trend below exceeds it):
+ns per frame, median (min), quiet machine · previous under-load median in
+the last column of each pair:
 
-- **The stripe is linear in N to two digits:** 17.5k → 34.8k → 71.5k →
-  145.4k, ratio per doubling 1.99 / 2.06 / 2.03. "One corpus read
-  regardless of query count" is not what the machinery does today; it does
-  N reads.
-- **The standing-rule tax, per pass:** rf_stripe_N / rf_sweeps_N = 6.5x
-  (N=1), 7.2x (N=2), 7.2x (N=4), 5.7x (N=8) — identical rule bodies,
-  identical pass count, different row machinery (full-row load + double
-  handle-resolve + centralized write vs direct envelope write).
-- **The fusion dividend, isolated on the sweep machinery:** rf_sweeps_N /
-  rf_fused_N = 1.04x (N=2), 1.52x (N=4), 1.98x (N=8) — it widens with N,
-  exactly the fusion signature.
-- **Fused is not flat:** 3100 → 12829 across 8x rules (4.1x), because the
-  per-row rule work (N envelope writes + N announces) rides along; only
-  the traversal and the shared vx read are shared. One corpus *read* is
-  not one corpus *cost*, and at 10k rows the columns are cache-resident —
-  the bandwidth-bound regime the O13 napkin describes (1M+ rows) would
-  need a bigger corpus to enter.
+| N | rf_stripe_N (N standing-rule passes) | was | rf_sweeps_N (N query passes) | was | rf_fused_N (1 query pass) | was |
+|---|---|---|---|---|---|---|
+| 1 | 13597 (13449) | 20982 | 2154 (2111) | 5607 | 2134 (2113) | 3865 |
+| 2 | 27563 (27400) | 39727 | 4674 (4566) | 7151 | 3479 (3458) | 8084 |
+| 4 | 55617 (55194) | 73996 | 9635 (9301) | 14990 | 6252 (6207) | 11407 |
+| 8 | 111486 (111397) | 168190 | 20195 (19378) | 27045 | 12689 (12477) | 16048 |
 
-Verdict in this board's own terms: the direction is validated — one pass
-in place of eight returns 2.0x on this rule family, growing with N — and
-the headline is embarrassed twice: the stripe O13 says fuses runs N passes
-today, and each of those passes costs 6–7x its imperative twin before
-fusion enters the picture. The deferred scheduling change at
-store.kz:3371 is worth 2x at N=8; retiring the standing-rule row tax is
-worth 6–7x at every N.
+Read the medians now, not the mins — run-to-run spread on the stripe and
+fused series is under 1%, so the median IS the load-robust end this time.
+
+- **The stripe is linear in N to three digits:** 13597 → 27563 → 55617 →
+  111486, ratio per doubling **2.027 / 2.018 / 2.005**. Under load this read
+  1.99 / 2.06 / 2.03 and the conclusion was right for shaky reasons; it is
+  now exact. "One corpus read regardless of query count" is not what the
+  machinery does today. It does N reads, and it does them to the digit.
+- **The standing-rule tax, per pass:** rf_stripe_N / rf_sweeps_N = **6.31x**
+  (N=1), **5.90x** (N=2), **5.77x** (N=4), **5.52x** (N=8) — identical rule
+  bodies, identical pass count, different row machinery (full-row load +
+  double handle-resolve + centralized write vs direct envelope write). The
+  old board read 6.5 / 7.2 / 7.2 / 5.7 and called it flat-ish noise; the tax
+  in fact **declines monotonically with N**, because the per-pass fixed cost
+  it charges is amortized against more work per frame.
+- **The fusion dividend was OVERSTATED. It is 1.59x at N=8, not 2.0x.**
+  rf_sweeps_N / rf_fused_N = 1.009x (N=1, the control), **1.343x** (N=2),
+  **1.541x** (N=4), **1.592x** (N=8). The direction the old board reported
+  survives — fusion pays, and pays more as N grows — but the magnitude was
+  inflated by contention that hurt the N-pass port more than the one-pass
+  port, which is exactly the bias a loaded machine has.
+- **And the dividend SATURATES**, which is new and only visible at this
+  resolution: `rf_fused_N` itself scales 1.630 / 1.797 / **2.030** per
+  doubling. By N=8 the fused port is scaling perfectly linearly — the shared
+  traversal has stopped being the cost, and each added rule is paying full
+  price in envelope writes. Beyond ~4 rules on this family, fusing the
+  traversal buys nothing further.
+
+Verdict in this board's own terms, corrected: the direction is validated —
+one pass in place of eight returns **1.59x** on this rule family, growing
+with N but flattening by N=8 — and the headline is embarrassed twice, the
+second time much harder than the first. The stripe O13 says fuses runs N
+passes today, to three digits. And each of those passes costs **5.5–6.3x**
+its imperative twin before fusion enters the picture at all. Ordering
+follows directly: the deferred scheduling change at store.kz:3371 is worth
+**1.59x** at N=8 and less below it, while retiring the standing-rule row tax
+is worth **5.5–6.3x at every N**. The row tax is the bigger prize by a
+factor of three, and it is the one nobody has scheduled.
 
 ### Dissolved-by-design (category-boundary entries — label or die)
 
