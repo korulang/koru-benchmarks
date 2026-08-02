@@ -459,13 +459,22 @@ three measured reasons:
   attempt needs explicit padding fields plus an `extern` layout so Zig cannot
   reorder, and that has not been tested end to end.
 
-**Methodology note, earned three times today.** Every extrapolation from a
+**Methodology note, earned FOUR times now.** Every extrapolation from a
 hand-written mock to the real store was WRONG (the prefetch mechanism, the
-capacity lever). Every claim measured against the real store held (codegen
-parity on rmw, the contiguity penalty, the fold latency bound). Mocks were
-excellent for KILLING hypotheses — envelope, announce, prefetch, len-hoisting
-all died cheaply in Zig — and unreliable for establishing them. Kill in the
-mock; confirm in the compiler.
+capacity lever, and — hours after this paragraph was written — the 3.91x
+projection retracted below). Every claim measured against the real store held
+(codegen parity on rmw, the contiguity penalty, the fold latency bound). Mocks
+were excellent for KILLING hypotheses — envelope, announce, prefetch,
+len-hoisting all died cheaply in Zig — and unreliable for establishing them.
+Kill in the mock; confirm in the compiler.
+
+The fourth instance sharpened it, because "unreliable for establishing" was too
+weak: a mock does not merely fail to find a real cost, it can **invent** one. A
+mock reproduces the emitted code's shape, never its inlining structure, so work
+the optimizer deletes in the real binary stays live in the mock and gets timed
+honestly. **Before a mock number becomes a scheduled rung, diff the codegen it
+claims to be about** — `probes/ab_codegen.py`, two compiles, no quiet machine
+required.
 
 ### The standing-rule row tax, DECOMPOSED (2026-08-02)
 
@@ -482,39 +491,24 @@ the mock separates them:
 | E `for` + full row + handle resolve | 17970 | 4.75x |
 | D `while` + full row + handle (the RULE path) | 22745 | **6.01x** |
 
-The mock reproduces the real 6.31x at 6.01x, so the decomposition is trusted.
-**The projection is the prize at 3.91x**; the loop form is 1.45x and the
-per-row handle resolve 1.22x on top.
+The mock reproduces the real 6.31x at 6.01x, so the decomposition was trusted.
+**It should not have been. Variant C is an artifact — see the retraction
+below.** The rows are kept verbatim because the correction is the finding.
 
 **Every one of the three is the rule path not using a mechanism the query path
-already has.** That is the whole finding, and it means none of this is new
-invention:
+already has.** That part survives, and it means none of this is new invention:
 
-- **Projection.** `koru_std/store.kz:1495` — *"Project every USER column and
-  let the binding address them"* — loops over all `user_field_count` columns
-  unconditionally, and the old authored-projection code below it is already
-  dead behind `if (false)`. The query path at `store.kz:7165` derives its
-  projection instead: *"every column the arm named, in declaration order"*,
-  filtered by a `used_cols` array that `SRewrite.walkCont` fills while it
-  rewrites the body.
+- **Projection.** `koru_std/store.kz:1495` projects every user column
+  unconditionally; the query path at `store.kz:7165` derives *"every column the
+  arm named, in declaration order"* from a `used_cols` array that
+  `SRewrite.walkCont` fills while it rewrites the body.
 - **Loop form.** `store.kz:3228` emits, for rules, a `while (i < s.len)` that
   re-reads `len`, saves `len_before`, and increments conditionally — row
   removal tolerance, so a `take` under a rule re-checks the swapped-in row
-  (690_031). That conditional increment is a loop-carried dependency on a
-  LOAD, which defeats vectorisation outright. The query path emits
-  `for (0..s.len)` and tolerates no removal.
+  (690_031). The query path emits `for (0..s.len)` and tolerates no removal.
 - **Handle.** `store.kz:3122` passes `__koru_handle_of(__koru_r)` as the
   body's row cursor on every row, whether or not the body addresses the row
   by handle.
-
-**Why this is not a five-line change.** `SRewrite` is declared INSIDE the
-sweep lowering function (`store.kz:6992`), so the rule path cannot call it,
-and the rule path has no take-detection at all — both fixes need a body walk
-that does not exist yet on that side. Getting it right means handling nested
-sites that rebind the row (690_086 rules 4 and 5), owned columns and their
-`__koru_qproj_` mangling, char columns, and the synthesized `parent` of a
-`[tree]` store. It changes how EVERY rule lowers, so it wants its own
-regression test plus the 690/695/670 clusters green before it lands.
 
 **Step 2 of three is LANDED** (koru `8b0dcd4a`). A rule that cannot remove a
 row now gets the query path's `for (0..len)`. The condition is WHOLE-PROGRAM,
@@ -523,34 +517,85 @@ scan of the rule's own body: if the program never mentions take, no row can be
 removed from anywhere by construction. Deliberately blunt — one mention
 anywhere keeps every rule in that program on the tolerant form.
 
-| port | before | after | speedup |
-|---|---|---|---|
-| `rf_stripe_1` | 13597 | **12275** | 1.11x |
-| `rf_stripe_2` | 27563 | **24697** | 1.12x |
-| `rf_stripe_4` | 55617 | **50264** | 1.11x |
-| `rf_stripe_8` | 111486 | **101519** | 1.10x |
+Its codegen change is real and its number survives re-measurement on the
+interleaved instrument described below — `rf_stripe_1` at koru `9388426a` vs
+koru `91410fdb`, 15 alternating pairs in one loop: **13549 → 12450 ns/iter
+median (1.088x), 13378 → 12212 min (1.095x)**. The board's original
+sequential figures (13597 → 12275, 1.11x) are consistent with that and are
+left standing.
 
-The query-path ports are unchanged within noise, as they must be. The row tax
-falls 6.31/5.90/5.77/5.52 to **5.67/5.32/5.44/5.32**. `690/695/670` ran 182
-passed with the same four known reds as before the change; the full 24-port
-board is green through `--check`.
+### RETRACTION (2026-08-02): the 3.91x projection did not exist
 
-**1.10x where the loop form measures 1.45x in isolation, and that is Amdahl,
-not a disappointment** — with the 3.91x projection still in place the loop form
-can only return its share. It is also the argument for the order below: fix the
-largest term and every smaller one's share grows.
+**Step 1 was implemented and it is worth nothing.** koru `986aee0f` derives the
+rule projection from the body exactly as planned — the emitted `qrow` for
+`rf_stripe_1` drops from nine column loads and a nine-field call to zero and a
+bare cursor. Then:
 
-**Remaining, largest first:**
-1. **Derive the rule projection from the body — the 3.91x, and the prize.**
-   `store.kz:1495` projects every user column unconditionally; the query path
-   at `7165` derives "every column the arm named" from a `used_cols` walk.
-   Under-projection fails LOUDLY as an unknown identifier in the emitted Zig,
-   which is the safe direction to be wrong in.
-2. Pass the handle cursor only when the body addresses the row by handle
-   (the 1.22x).
+| port | asm before | asm after |
+|---|---|---|
+| `rf_stripe_1` / `_2` / `_4` / `_8` | — | **byte-identical** |
+| `rf_sweeps_1`, `rf_fused_8` | — | **byte-identical** |
 
-Compounded with what landed, that is still most of the 6x, and it remains the
-largest single unexploited number on this board.
+All six rule ports compile to the same optimized machine code with and without
+the projection. The `qrow` handler is `inline`; after inlining, nine loads that
+nothing consumes are dead, and LLVM had been deleting them the whole time.
+Compile time moves 1.003x on `rf_stripe_8`; emitted source shrinks 2–13%.
+
+**Variant C of the mock measured a cost the real compiler does not pay.** The
+mock reproduced the emitted code's SHAPE without its INLINING STRUCTURE, so its
+dead loads stayed live and were honestly timed. The board's standing methodology
+note said mocks are unreliable for *establishing* a cost; this is the sharper
+case it did not cover — a mock can **manufacture** one, and a manufactured cost
+survives review, because it is reproducible and it points at real code that
+really does look wasteful. It sat at the top of the work list for a day.
+
+**How the drift nearly hid it.** Two full board passes four minutes apart said
+the change was worth 1.12x. It was not: `rf_sweeps_*`, the query-path control
+that shares nothing with the rule path, moved 1.12x in the same direction. A
+control that moves with the treatment condemns the run.
+
+**The instrument that settled it, and the one to reach for first:**
+`probes/ab_codegen.py <port> --a <rev> --b <rev>`. It builds the port against
+two stdlib revisions, diffs the disassembly, and only times when the codegen
+actually differs. Identical assembly cannot run at different speeds — that is a
+proof, it costs two compiles, and it needs no quiet machine. When timing IS
+warranted it alternates the two binaries inside one loop; measured noise floor
+on byte-identical binaries **1.000x**, against **1.088x** for the
+three-instruction loop-form change. The board's own protocol cannot see either.
+
+### What the row tax actually is: the handle round-trip
+
+With the projection gone the two loops can be read side by side, and the answer
+is in the disassembly, not in a mock. Same body, same store, 10k rows.
+
+`rf_sweeps_1` — the query path — is four instructions doing two rows at a time:
+
+```
+ldr   q0, [x14, x10]      ; p1[i..i+1]
+ldr   q1, [x13], #0x10    ; vx[i..i+1]
+fadd.2d v0, v0, v1
+str   q0, [x14, x10]
+```
+
+`rf_stripe_1` — the rule path — is twenty instructions doing one row, with four
+conditional panic branches and a four-deep chain of dependent loads before the
+first useful byte arrives: `handles[i]` → generation table → generation table
+again → dense-row table → column. The `fadd` is scalar. Nothing in that chain
+can be vectorised, unrolled, or hoisted, because every address depends on the
+previous load and every step can panic.
+
+That chain is `__koru_handle_of(__koru_r)` at `store.kz:3122` followed by
+`__koru_resolve(__koru_qrow)` at each access — the rung the mock priced at
+**1.22x**. It is not 1.22x. It is, as far as the emitted code can show,
+essentially the entire remaining 5.68x, and the mock understated it as badly as
+it overstated the projection. The decomposition's ORDERING was backwards.
+
+The fix already has its predicate: the same whole-program `may_remove` question
+that chose the loop form. A program that cannot remove a row cannot invalidate a
+dense index, so the rule path can carry the dense cursor the query path already
+carries (`__koru_sdix_`, the O10.iv elision at `store.kz:7023`) and skip the
+round-trip entirely. Not attempted yet; it is the next rung, and this time it
+will be sized against the real compiler before it goes on the board as a number.
 
 ### Dissolved-by-design (category-boundary entries — label or die)
 
