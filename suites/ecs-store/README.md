@@ -597,6 +597,58 @@ carries (`__koru_sdix_`, the O10.iv elision at `store.kz:7023`) and skip the
 round-trip entirely. Not attempted yet; it is the next rung, and this time it
 will be sized against the real compiler before it goes on the board as a number.
 
+### The store-op vocabulary, sized (2026-08-02) — its headline member is worth nothing
+
+A vocabulary of declared column operations was sketched on 2026-07-31, ordered
+by expected payoff: `swapped { a <-> b }` (exchange, O(1) when total),
+**elementwise combine** (`pos += vel`), fill/splat, copy, fold, and masked
+forms. The criterion for admitting a member was sharp and is worth keeping:
+*does it let the compiler do something it provably cannot recover from the
+general form?*
+
+Elementwise combine was named the biggest prize on the grounds that
+`for (0..n) |i|` cannot reach the non-aliasing slice form
+`for (px, vx) |*p, v| p.* += v`. **It reaches it today.** Read straight off the
+binary, no timing needed:
+
+| port | emitted inner loop |
+|---|---|
+| `simple_iter_f32` | `fadd.4s` — **4 rows/iteration**, three fused columns in one body, scalar epilogue |
+| `simple_iter` (f64) | `fadd.2d` — **2 rows/iteration** |
+
+Full SIMD width for the element type, with the three-column fusion intact. The
+columns are separate SoA arrays, so there is no aliasing to prove away and LLVM
+vectorises the index form unaided. **The gap the verb existed to close is not
+there.** That retires the vocabulary's headline and takes the probe designed for
+it off the list — the probe was going to hand-write the slice form and race it;
+the disassembly answered first, for the cost of one `grep`.
+
+What survives is the genuinely asymptotic tail, which is a smaller and sharper
+list than the one we started with:
+
+- **`swapped`** — O(1) base-pointer exchange vs O(n) copy. Real, and the use
+  case is double buffering, not swapping.
+- **fill / copy** — memset / memcpy vs an element loop.
+- **fold** — the only member with a measured number behind it: a declared
+  reduction breaks the serial accumulator chain that costs 3.16 cycles/element
+  (one FP-add latency) and 8–12x an update over the same columns.
+
+And the constraint that gates all of them is not a property of any member:
+**an operation is fusible exactly when its notification granularity matches its
+data granularity.** A column op with row-granular watchers attached has its O(1)
+eaten by O(n) notifications, so the vocabulary needs column-granular
+subscription before any member pays. Because Koru's subscriptions are compiled
+rather than registered, the compiler knows statically which watchers are
+attached to which column — so the mismatch is a COMPILE ERROR, never a silent
+fall back to the element loop. That rule was derived independently twice, here
+and from the reduction side.
+
+One invariant here is pinnable and would be GREEN, not another aspirational red:
+**an unwatched store column op should emit the same code as the equivalent
+kernel op on the same data.** The store's distinguishing feature is switched off
+on that path, so any difference is pure store overhead. `probes/ab_codegen.py`
+is the instrument.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype
