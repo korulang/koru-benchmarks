@@ -281,6 +281,65 @@ store's whole write envelope — field selector, five dead value slots, the
 announce calls — is elided by the optimizer); the widths are NOT unrolled
 differently; and the original scaling anomaly was NOT a defect.
 
+### The column-shapes probe (2026-08-02) — a fold costs 8–12x an update
+
+`probes/column_shapes.py`, results in `results/column-shapes-2026-08-02.json`.
+Fixed N=50000 (L2-resident at every k), sweeping the number of columns a
+single query touches. Two per-row shapes over the SAME columns:
+
+- **RMW** — `e.p_i: e.p_i + e.v_i` for i in 1..k. 2k reads, k writes, and k
+  **independent** add chains. This is `simple_iter`'s shape.
+- **FOLD** — `check.sum: check.sum + e.p_1 + e.v_1 + ...`. 2k reads, no
+  column write, and **one serial** dependency chain through the accumulator.
+
+**Finding 1 — the f32 deficit is NOT the addressing mode, and the hypothesis
+died on this table.** The scaling probe noted that f32's loop walked six
+post-incremented pointers where f64's used one base register with register
+offsets, and offered it as a candidate cause. Sweeping k settles it:
+
+| k | f32 GB/s | f64 GB/s | f32/f64 | f32 addressing | f64 addressing |
+|---|---|---|---|---|---|
+| 1 | 99.9 | 112.6 | 88.7% | post-inc | reg-offset |
+| 2 | 88.7 | 110.8 | 80.1% | post-inc | reg-offset |
+| 3 | 82.7 | 111.3 | 74.3% | post-inc | reg-offset |
+| 4 | 79.0 | 108.6 | **72.7%** | **reg-offset** | **reg-offset** |
+| 5 | 82.2 | 106.5 | 77.2% | reg-offset | reg-offset |
+| 6 | 78.6 | 105.0 | 74.9% | reg-offset | reg-offset |
+| 8 | 77.2 | 102.3 | 75.5% | reg-offset | reg-offset |
+
+From k=4 upward **both widths emit the same addressing form and the deficit is
+unchanged** — it plateaus near 75% instead of growing with pointer count. So
+the f32/f64 asymmetry survives its most plausible explanation and stays OPEN.
+Separating it needs hardware counters. What the table does establish, and it
+is useful on its own: **f64 is nearly insensitive to column count** (112.6 →
+102.3 GB/s from k=1 to k=8, −9%) where **f32 degrades three times as fast**
+(99.9 → 77.2, −23%). A wide query is cheap in this store; a wide NARROW query
+is less cheap, and nobody knows why yet.
+
+**Finding 2 — and this is the larger one. A fold runs at exactly one FP-add
+latency per element, and costs 8–12x the update over the same columns.**
+
+| k | width | ns/pass | dependent adds | ns/add | cycles/add | vs RMW |
+|---|---|---|---|---|---|---|
+| 3 | f32 | 270306 | 300000 | 0.901 | **3.15** | 12.4x |
+| 3 | f64 | 271335 | 300000 | 0.904 | **3.17** | 8.4x |
+| 8 | f32 | 722828 | 800000 | 0.903 | **3.16** | 11.6x |
+| 8 | f64 | 723420 | 800000 | 0.904 | **3.17** | 7.7x |
+
+3.16 cycles per add, flat across both widths and both column counts, against
+an Apple M-series FP-add latency of ~3 cycles. The fold is **latency-bound on
+its own accumulator**, not bandwidth-bound — which is why f32 and f64 land
+within 0.4% of each other here while differing 25% on the RMW shape. Latency
+does not care how wide the element is.
+
+The FOLD series is deliberately NOT a write-free control for RMW: it also
+collapses k independent chains into one. That confound **is** the finding —
+it is what isolates the latency bound. It also puts a number on a lever the
+design has discussed and never measured: a *declared* reduction, free to use
+several accumulators or a log-depth tree, is worth up to an order of
+magnitude on this shape. Today every aggregate written as a sweep accumulator
+pays 3.16 cycles per element, serially, no matter how wide the machine is.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype

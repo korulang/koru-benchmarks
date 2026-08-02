@@ -1,0 +1,264 @@
+{
+  "suite": "ecs-store",
+  "kind": "koru-inprocess-probe",
+  "probe": "column_shapes",
+  "generated_at": "2026-08-02T02:14:43Z",
+  "rows": 50000,
+  "machine": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2 Pro",
+    "load_avg": "4.65 4.71 4.42"
+  },
+  "koru": {
+    "commit": "9388426a"
+  },
+  "protocol": {
+    "process_runs": 9,
+    "instrument": "in-process std/time around 1000 timed passes; median across interleaved process runs",
+    "caveat": "gb_per_s and cycles/add are DERIVED from a traffic model and a nominal 3.5 GHz, not from hardware counters. Comparable between rows of these tables and nowhere else.",
+    "fold_note": "the FOLD series is NOT a write-free control for the RMW series \u2014 it also collapses k independent add chains into one serial chain. That confound is the finding, not a flaw to correct: it is what isolates the latency bound."
+  },
+  "results": {
+    "rmw_f32_k1": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 1,
+      "median_ns": 6006,
+      "min_ns": 5921,
+      "bytes_per_pass": 600000,
+      "gb_per_s": 99.9,
+      "addressing": {
+        "form": "post-inc",
+        "post_inc": 4,
+        "reg_offset": 3
+      }
+    },
+    "rmw_f32_k2": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 2,
+      "median_ns": 13534,
+      "min_ns": 13264,
+      "bytes_per_pass": 1200000,
+      "gb_per_s": 88.7,
+      "addressing": {
+        "form": "post-inc",
+        "post_inc": 8,
+        "reg_offset": 6
+      }
+    },
+    "rmw_f32_k3": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 3,
+      "median_ns": 21768,
+      "min_ns": 21521,
+      "bytes_per_pass": 1800000,
+      "gb_per_s": 82.7,
+      "addressing": {
+        "form": "post-inc",
+        "post_inc": 12,
+        "reg_offset": 9
+      }
+    },
+    "rmw_f32_k4": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 4,
+      "median_ns": 30366,
+      "min_ns": 30080,
+      "bytes_per_pass": 2400000,
+      "gb_per_s": 79.0,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 0,
+        "reg_offset": 36
+      }
+    },
+    "rmw_f32_k5": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 5,
+      "median_ns": 36503,
+      "min_ns": 36210,
+      "bytes_per_pass": 3000000,
+      "gb_per_s": 82.2,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 0,
+        "reg_offset": 45
+      }
+    },
+    "rmw_f32_k6": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 6,
+      "median_ns": 45784,
+      "min_ns": 45458,
+      "bytes_per_pass": 3600000,
+      "gb_per_s": 78.6,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 0,
+        "reg_offset": 54
+      }
+    },
+    "rmw_f32_k8": {
+      "kind": "rmw",
+      "width": "f32",
+      "columns": 8,
+      "median_ns": 62215,
+      "min_ns": 61363,
+      "bytes_per_pass": 4800000,
+      "gb_per_s": 77.2,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 0,
+        "reg_offset": 72
+      }
+    },
+    "fold_f32_k3": {
+      "kind": "fold",
+      "width": "f32",
+      "columns": 3,
+      "median_ns": 270306,
+      "min_ns": 268573,
+      "bytes_per_pass": 1200000,
+      "gb_per_s": 4.4,
+      "dependent_adds_per_pass": 300000,
+      "ns_per_dependent_add": 0.901
+    },
+    "fold_f32_k8": {
+      "kind": "fold",
+      "width": "f32",
+      "columns": 8,
+      "median_ns": 722828,
+      "min_ns": 715493,
+      "bytes_per_pass": 3200000,
+      "gb_per_s": 4.4,
+      "dependent_adds_per_pass": 800000,
+      "ns_per_dependent_add": 0.9035
+    },
+    "rmw_f64_k1": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 1,
+      "median_ns": 10654,
+      "min_ns": 10514,
+      "bytes_per_pass": 1200000,
+      "gb_per_s": 112.6,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 0,
+        "reg_offset": 1
+      }
+    },
+    "rmw_f64_k2": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 2,
+      "median_ns": 21669,
+      "min_ns": 21426,
+      "bytes_per_pass": 2400000,
+      "gb_per_s": 110.8,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 14
+      }
+    },
+    "rmw_f64_k3": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 3,
+      "median_ns": 32344,
+      "min_ns": 32176,
+      "bytes_per_pass": 3600000,
+      "gb_per_s": 111.3,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 23
+      }
+    },
+    "rmw_f64_k4": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 4,
+      "median_ns": 44184,
+      "min_ns": 43812,
+      "bytes_per_pass": 4800000,
+      "gb_per_s": 108.6,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 32
+      }
+    },
+    "rmw_f64_k5": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 5,
+      "median_ns": 56354,
+      "min_ns": 55964,
+      "bytes_per_pass": 6000000,
+      "gb_per_s": 106.5,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 41
+      }
+    },
+    "rmw_f64_k6": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 6,
+      "median_ns": 68594,
+      "min_ns": 67956,
+      "bytes_per_pass": 7200000,
+      "gb_per_s": 105.0,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 50
+      }
+    },
+    "rmw_f64_k8": {
+      "kind": "rmw",
+      "width": "f64",
+      "columns": 8,
+      "median_ns": 93872,
+      "min_ns": 93158,
+      "bytes_per_pass": 9600000,
+      "gb_per_s": 102.3,
+      "addressing": {
+        "form": "reg-offset",
+        "post_inc": 2,
+        "reg_offset": 68
+      }
+    },
+    "fold_f64_k3": {
+      "kind": "fold",
+      "width": "f64",
+      "columns": 3,
+      "median_ns": 271335,
+      "min_ns": 270462,
+      "bytes_per_pass": 2400000,
+      "gb_per_s": 8.8,
+      "dependent_adds_per_pass": 300000,
+      "ns_per_dependent_add": 0.9044
+    },
+    "fold_f64_k8": {
+      "kind": "fold",
+      "width": "f64",
+      "columns": 8,
+      "median_ns": 723420,
+      "min_ns": 721220,
+      "bytes_per_pass": 6400000,
+      "gb_per_s": 8.8,
+      "dependent_adds_per_pass": 800000,
+      "ns_per_dependent_add": 0.9043
+    }
+  }
+}
