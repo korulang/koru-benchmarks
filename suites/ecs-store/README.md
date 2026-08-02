@@ -354,6 +354,52 @@ pays 3.16 cycles per element, serially, no matter how wide the machine is.
 
 These two are where the central refusal gets validated or embarrassed.
 
+**Width pairs for both, added 2026-08-02 — and one of them was a hole in this
+board's own discipline.** The "widths, stated once" rule at the top of the
+one-to-one tier was never applied down here. `fragmented_iter` was quoted at
+f64 against reference fragments that hold **f32**, so part of the gap to
+shipyard was our own missing port rather than anything about either design.
+`add_remove_component` has no f32 question at all — its columns are `hp: i64,
+b: i64` — but it has a sharper one: **O13 says presence is DATA, and that
+datum currently costs eight bytes per row to say one bit.** So the pair there
+is i64 against i32.
+
+| entry | wide | narrow | dividend | ideal |
+|---|---|---|---|---|
+| `fragmented_iter` | 140 ns (f64) | **109 ns** (f32) | **1.29x** | 2.00x |
+| `add_remove_component` | 1763 ns (i64) | **931 ns** (i32) | **1.89x** | 2.00x |
+
+Absolute figures here are ~8% above the published board's (taken at 5-min
+load 4.85 against the board's 4.0); the RATIOS are the result and they hold
+across two independent runs. These entries want a quiet full-board run before
+their absolutes are quoted anywhere.
+
+- **Halving the width is worth 1.29x here and 1.89x there, and the gap
+  between those two numbers is the interesting part.** `add_remove`'s timed
+  loop is a pure streaming WRITE of a constant over a 160 KB working set —
+  L2-resident, bandwidth-bound, and narrowing pays nearly full freight.
+  `fragmented_iter`'s is a read-modify-write over 4 KB — L1-resident, so it
+  was never bandwidth-bound and narrowing buys much less.
+- **That is also the sharpest pointer yet at the open f32/f64 asymmetry.**
+  The scaling and column-shapes probes found read-modify-write narrowing at
+  only ~1.5x of the ideal 2x and could not say why. A pure streaming write
+  narrows at 1.89x. Suggestive that the deficit lives on the READ path — but
+  these two workloads differ in row count, working set and element type as
+  well as in read-vs-write, so it is a lead, NOT a result. The clean version
+  is a streaming-write against a read-modify-write at matched N, width and
+  type, which nobody has run yet.
+- **The shipyard gap on `fragmented_iter` shrinks but does not close:
+  3.46x with our f64 port, 2.69x width-faithful.** I estimated beforehand
+  that the missing port was worth about half the gap; it was worth about a
+  fifth. The remainder is real and still unexplained, and shipyard's element
+  rate on that entry implies it vectorizes something we do not.
+- The emitted arithmetic is identical across the `fragmented_iter` pair,
+  checked rather than assumed: LLVM strength-reduces the f64 port's
+  `data * 2.0` to `fadd.2d v0, v0, v0` and the f32 port's `data + 1.0` is
+  `fadd.4s v1, v1, v5`. Same instruction, same count, both unrolled four
+  vector ops deep over paired `ldp`/`stp`. Column width is the only
+  surviving difference.
+
 ### Gap-namers (honest-ABSENT until the rungs exist)
 
 - `schedule` — 3 systems over 40k entities, outer parallelism. **Store
