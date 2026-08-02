@@ -5,7 +5,7 @@
 // CATEGORY BOUNDARY — NEVER a win-quote. The reference engines pay per-table
 // overhead walking 26 fragmented archetypes inside one query; std/store has
 // no archetypes (O13: presence is data, not schema membership), so each
-// fragment is simply its own store and a pass is 26 independent sweeps.
+// fragment is simply its own store and one pass is 26 independent queries.
 // Same workload name, structurally different iteration. The number below is
 // what OUR operation costs; the baseline is what THEIRS costs. The reader
 // compares; this file does not.
@@ -14,9 +14,9 @@
 // per store, 900 timed passes bracketed by std/time:now()/elapsed, each
 // block printing its own total_ns line — the runner SUMS total_ns lines, so
 // per-iteration ns = (sum over 26 stores) / 900, one iteration = one full
-// pass over all 26 fragments. A sweep has no completion branch to chain 26
-// sweeps inside one loop, so the passes are store-major (each store's 900
-// sweeps timed consecutively) where the reference interleaves all 26
+// pass over all 26 fragments. A query has no completion branch to chain 26
+// of them inside one loop, so the passes are store-major (each store's 900
+// timed consecutively) where the reference interleaves all 26
 // fragments per iteration. The whole working set is 26 x 20 x 8 B = 4160
 // bytes — L1-resident in either order. Columns are f64 (the store's pinned
 // scalar type, 690_021); the reference fragments hold f32 — twice our
@@ -31,7 +31,7 @@
 //
 // Spellings grounded in passing koru regression tests:
 //   26 stores, one program                 690_121_twenty_six_component_stores
-//   f64 columns + sweep/stored write       690_111, 690_021
+//   f64 columns + query/stored write       690_111, 690_021
 //   insert under for-each, capacity        690_047, 690_011
 //   clock bind + for `| done` chain        910/2111, and simple_iter_1col.k (measured)
 import std/io
@@ -152,419 +152,419 @@ for(0..20)
 ! each _ |> std/store:insert(cz) { data: 1.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ca)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ca)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cb)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cb)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cc)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cc)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cd)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cd)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ce)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ce)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cf)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cf)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cg)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cg)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ch)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ch)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ci)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ci)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cj)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cj)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ck)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ck)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cl)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cl)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cm)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cm)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cn)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cn)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(co)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(co)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cp)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cp)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cq)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cq)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cr)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cr)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cs)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cs)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ct)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ct)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cu)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cu)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cv)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cv)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cw)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cw)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cx)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cx)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cy)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cy)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(cz)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cz)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ca)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ca)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cb)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cb)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cc)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cc)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cd)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cd)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ce)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ce)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cf)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cf)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cg)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cg)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ch)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ch)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ci)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ci)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cj)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cj)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ck)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ck)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cl)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cl)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cm)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cm)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cn)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cn)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(co)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(co)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cp)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cp)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cq)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cq)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cr)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cr)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cs)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cs)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(ct)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(ct)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cu)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cu)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cv)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cv)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cw)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cw)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cx)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cx)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cy)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cy)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..900)
-! each _ |> std/store:sweep(cz)
-    ! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+! each _ |> std/store:query(cz)
+    ! query e |> std/store:stored { e.data: e.data * 2.0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}") |> std/io:print.ln("timed_iters 900")
 
 for(0..1000)
-! each _ |> std/store:sweep(ca)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ca)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cb)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cb)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cc)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cc)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cd)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cd)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(ce)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ce)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cf)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cf)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cg)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cg)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(ch)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ch)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(ci)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ci)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cj)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cj)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(ck)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ck)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cl)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cl)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cm)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cm)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cn)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cn)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(co)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(co)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cp)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cp)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cq)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cq)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cr)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cr)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cs)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cs)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(ct)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(ct)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cu)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cu)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cv)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cv)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cw)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cw)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cx)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cx)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cy)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cy)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
 for(0..1000)
-! each _ |> std/store:sweep(cz)
-    ! sweep e |> std/store:stored { e.data: e.data * 0.5 }
+! each _ |> std/store:query(cz)
+    ! query e |> std/store:stored { e.data: e.data * 0.5 }
 
-std/store:sweep(ca)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ca)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cb)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cb)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cc)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cc)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cd)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cd)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(ce)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ce)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cf)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cf)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cg)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cg)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(ch)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ch)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(ci)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ci)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cj)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cj)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(ck)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ck)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cl)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cl)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cm)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cm)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cn)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cn)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(co)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(co)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cp)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cp)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cq)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cq)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cr)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cr)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cs)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cs)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(ct)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(ct)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cu)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cu)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cv)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cv)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cw)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cw)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cx)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cx)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cy)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cy)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
-std/store:sweep(cz)
-! sweep e |> std/store:stored { check.sum: check.sum + e.data }
+std/store:query(cz)
+! query e |> std/store:stored { check.sum: check.sum + e.data }
 
 std/store:stored { out.v: check.sum }

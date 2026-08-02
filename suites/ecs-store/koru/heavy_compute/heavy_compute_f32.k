@@ -21,8 +21,8 @@ for(0..1000)
 ! each _ |> std/store:insert(mats) { t00: -3.0, t01: -3.0, t02: 2.0, t03: -3.0, t10: 2.0, t11: -3.0, t12: -1.0, t13: -3.0, t20: -1.0, t21: -1.0, t22: 2.0, t23: 2.0, t30: 1.0, t31: 2.0, t32: -3.0, t33: -3.0, o00: 0.0, o01: 0.0, o02: 0.0, o03: 0.0, o10: 0.0, o11: 0.0, o12: 0.0, o13: 0.0, o20: 0.0, o21: 0.0, o22: 0.0, o23: 0.0, o30: 0.0, o31: 0.0, o32: 0.0, o33: 0.0, det: 0.0 }
 
 for(0..300)
-! each _ |> std/store:sweep(mats)
-    ! sweep e |> std/store:stored {
+! each _ |> std/store:query(mats)
+    ! query e |> std/store:stored {
         e.det: e.t00 * (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) + e.t01 * (0.0 - e.t10 * e.t22 * e.t33 + e.t10 * e.t23 * e.t32 + e.t12 * e.t20 * e.t33 - e.t12 * e.t23 * e.t30 - e.t13 * e.t20 * e.t32 + e.t13 * e.t22 * e.t30) + e.t02 * (e.t10 * e.t21 * e.t33 - e.t10 * e.t23 * e.t31 - e.t11 * e.t20 * e.t33 + e.t11 * e.t23 * e.t30 + e.t13 * e.t20 * e.t31 - e.t13 * e.t21 * e.t30) + e.t03 * (0.0 - e.t10 * e.t21 * e.t32 + e.t10 * e.t22 * e.t31 + e.t11 * e.t20 * e.t32 - e.t11 * e.t22 * e.t30 - e.t12 * e.t20 * e.t31 + e.t12 * e.t21 * e.t30),
         e.o00: (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) / e.det,
         e.o01: (0.0 - e.t01 * e.t22 * e.t33 + e.t01 * e.t23 * e.t32 + e.t02 * e.t21 * e.t33 - e.t02 * e.t23 * e.t31 - e.t03 * e.t21 * e.t32 + e.t03 * e.t22 * e.t31) / e.det,
@@ -59,8 +59,8 @@ for(0..300)
     }
 
 std/time:now(): start |> for(0..1000)
-! each _ |> std/store:sweep(mats)
-    ! sweep e |> std/store:stored {
+! each _ |> std/store:query(mats)
+    ! query e |> std/store:stored {
         e.det: e.t00 * (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) + e.t01 * (0.0 - e.t10 * e.t22 * e.t33 + e.t10 * e.t23 * e.t32 + e.t12 * e.t20 * e.t33 - e.t12 * e.t23 * e.t30 - e.t13 * e.t20 * e.t32 + e.t13 * e.t22 * e.t30) + e.t02 * (e.t10 * e.t21 * e.t33 - e.t10 * e.t23 * e.t31 - e.t11 * e.t20 * e.t33 + e.t11 * e.t23 * e.t30 + e.t13 * e.t20 * e.t31 - e.t13 * e.t21 * e.t30) + e.t03 * (0.0 - e.t10 * e.t21 * e.t32 + e.t10 * e.t22 * e.t31 + e.t11 * e.t20 * e.t32 - e.t11 * e.t22 * e.t30 - e.t12 * e.t20 * e.t31 + e.t12 * e.t21 * e.t30),
         e.o00: (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) / e.det,
         e.o01: (0.0 - e.t01 * e.t22 * e.t33 + e.t01 * e.t23 * e.t32 + e.t02 * e.t21 * e.t33 - e.t02 * e.t23 * e.t31 - e.t03 * e.t21 * e.t32 + e.t03 * e.t22 * e.t31) / e.det,
@@ -97,7 +97,7 @@ std/time:now(): start |> for(0..1000)
     }
 | done |> std/time:elapsed(start): d |> std/io:print.ln("total_ns {{ d.ns:d }}") |> std/io:print.ln("timed_iters 10")
 
-std/store:sweep(mats)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.o00 + e.o01 + e.o02 + e.o03 + e.o10 + e.o11 + e.o12 + e.o13 + e.o20 + e.o21 + e.o22 + e.o23 + e.o30 + e.o31 + e.o32 + e.o33 + e.det }
+std/store:query(mats)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.o00 + e.o01 + e.o02 + e.o03 + e.o10 + e.o11 + e.o12 + e.o13 + e.o20 + e.o21 + e.o22 + e.o23 + e.o30 + e.o31 + e.o32 + e.o33 + e.det }
 
 std/store:stored { out.v: check.sum }

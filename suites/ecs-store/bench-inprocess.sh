@@ -29,12 +29,30 @@ RUNS="${KORU_BENCH_RUNS:-5}"
 BASELINE="$ROOT/baseline/2026-07-05-m2pro.json"
 # Any number of filter args; an entry directory is included if its name
 # contains ANY of them. No args = full board (the only mode that persists).
-FILTER="$*"
+#
+# `--check` is the CORRECTNESS GATE, and it is the mode to run after any
+# language change: compile every port, run it once, demand its checksum match
+# its oracle, and EXIT NONZERO if a single port is BLOCKED or WRONG. The
+# timing board cannot serve as that gate — by design it reports BLOCKED and
+# carries on timing whatever still compiles, which is how koru `19d9393d`
+# (the `sweep` -> `query` / `query` -> `rule` rename) left all 22 ports
+# uncompilable for a day with the board still quoting numbers.
+CHECK=0
+FILTER=""
+for a in "$@"; do
+  if [ "$a" = "--check" ]; then CHECK=1; else FILTER="$FILTER $a"; fi
+done
+FILTER="$(printf '%s' "$FILTER" | sed 's/^ *//;s/ *$//')"
+[ "$CHECK" -eq 1 ] && RUNS=1
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 echo "Machine: $(uname -sm) · koruc: $KORUC · runs per port: $RUNS"
-echo "Protocol: in-process std/time around the timed passes; per-iter ns = total_ns / timed_iters; median of $RUNS process runs."
+if [ "$CHECK" -eq 1 ]; then
+  echo "Mode: --check — compile + one run per port, checksum against its oracle. No timing is reported."
+else
+  echo "Protocol: in-process std/time around the timed passes; per-iter ns = total_ns / timed_iters; median of $RUNS process runs."
+fi
 echo
 
 # compile_port <name> <src.k> — builds in $TMP/<name>; on failure prints
@@ -98,7 +116,7 @@ print(f"{statistics.median(xs):.0f} {min(xs)} {xs}")' "$TMP/ns_$name")"
 }
 
 : > "$TMP/frags"
-names=(); oracles=()
+names=(); oracles=(); discovered=0
 for dir in "$ROOT"/koru/*/; do
   entry="$(basename "$dir")"
   if [ -n "$FILTER" ]; then
@@ -112,12 +130,17 @@ for dir in "$ROOT"/koru/*/; do
     # Every port names its own oracle: <basename>.expected.txt beside the source.
     oracle="$dir/$base.expected.txt"
     [ -f "$oracle" ] || { echo "$base: missing oracle $oracle" >&2; exit 2; }
+    discovered=$((discovered + 1))
     if compile_port "$base" "$src"; then
       names+=("$base"); oracles+=("$oracle")
     fi
   done
 done
-[ "${#names[@]}" -gt 0 ] || { echo "no ports matched (or none compiled)" >&2; exit 1; }
+if [ "${#names[@]}" -eq 0 ]; then
+  echo "no ports matched (or none compiled)" >&2
+  [ "$CHECK" -eq 1 ] && [ "$discovered" -gt 0 ] && echo "correctness: 0/$discovered ports compile" >&2
+  exit 1
+fi
 
 echo "Interleaving $RUNS process runs across: ${names[*]}"
 uptime
@@ -128,6 +151,19 @@ for _ in $(seq 1 "$RUNS"); do
 done
 uptime
 echo
+if [ "$CHECK" -eq 1 ]; then
+  # A port reaches ns_<name> only by compiling, matching its oracle, and
+  # printing well-formed timing lines — so its presence IS the verdict.
+  green=0
+  for name in "${names[@]}"; do
+    if [ -f "$TMP/ns_$name" ]; then printf '%-22s OK\n' "$name"; green=$((green + 1)); fi
+  done
+  echo
+  echo "correctness: $green/$discovered ports compile and match their oracle"
+  [ "$green" -eq "$discovered" ] || { echo "FAILED — see the BLOCKED / WRONG ANSWER lines above" >&2; exit 1; }
+  exit 0
+fi
+
 for name in "${names[@]}"; do
   report_port "$name"
 done

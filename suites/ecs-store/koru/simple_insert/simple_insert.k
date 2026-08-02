@@ -13,7 +13,7 @@
 // timed region — first-touch page faults on each store's columns do.
 // A store cannot be drained and reused today: a literal row index is a
 // generation-0 handle (stale after its slot is reused), and take with a
-// sweep-bound row miscompiles — see the board README's defect list.
+// query-bound row miscompiles — see the board README's defect list.
 //
 // Protocol: 1 untimed warmup pass into w, then 5 timed passes into e1..e5,
 // each bracketed by its own std/time:now()/elapsed printing one total_ns
@@ -67,22 +67,22 @@ std/time:now(): s5 |> for(0..10000)
 ! each _ |> std/store:insert(e5) { t00: 1.0, t01: 0.0, t02: 0.0, t03: 0.0, t10: 0.0, t11: 1.0, t12: 0.0, t13: 0.0, t20: 0.0, t21: 0.0, t22: 1.0, t23: 0.0, t30: 0.0, t31: 0.0, t32: 0.0, t33: 1.0, px: 1.0, py: 0.0, pz: 0.0, rx: 1.0, ry: 0.0, rz: 0.0, vx: 1.0, vy: 0.0, vz: 0.0 }
 | done |> std/time:elapsed(start: s5): d5 |> std/io:print.ln("total_ns {{ d5.ns:d }}") |> std/io:print.ln("timed_iters 5")
 
-std/store:sweep(w)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(w)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
-std/store:sweep(e1)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(e1)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
-std/store:sweep(e2)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(e2)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
-std/store:sweep(e3)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(e3)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
-std/store:sweep(e4)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(e4)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
-std/store:sweep(e5)
-! sweep e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
+std/store:query(e5)
+! query e |> std/store:stored { check.sum: check.sum + e.t00 + e.t01 + e.t02 + e.t03 + e.t10 + e.t11 + e.t12 + e.t13 + e.t20 + e.t21 + e.t22 + e.t23 + e.t30 + e.t31 + e.t32 + e.t33 + e.px + e.py + e.pz + e.rx + e.ry + e.rz + e.vx + e.vy + e.vz }
 
 std/store:stored { out.v: check.sum }

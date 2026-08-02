@@ -19,8 +19,8 @@ std/store:watch(out)
 for(0..10000)
 ! each _ |> std/store:insert(ents) { vx: 1.0, p1: 0.0, p2: 0.0, p3: 0.0, p4: 0.0, p5: 0.0, p6: 0.0, p7: 0.0, p8: 0.0 }
 
-[name(r1)]std/store:query(ents)
-! query s1 |> std/store:stored { s1.p1: s1.p1 + s1.vx }
+[name(r1)]std/store:rule(ents)
+! row s1 |> std/store:stored { s1.p1: s1.p1 + s1.vx }
 
 for(0..100)
 ! each _ |> std/store:stripe(ents)
@@ -29,7 +29,7 @@ std/time:now(): tstart |> for(0..1000)
 ! each _ |> std/store:stripe(ents)
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}") |> std/io:print.ln("timed_iters 1000")
 
-std/store:sweep(ents)
-! sweep r |> std/store:stored { check.sum: check.sum + r.p1 + r.p2 + r.p3 + r.p4 + r.p5 + r.p6 + r.p7 + r.p8 }
+std/store:query(ents)
+! query r |> std/store:stored { check.sum: check.sum + r.p1 + r.p2 + r.p3 + r.p4 + r.p5 + r.p6 + r.p7 + r.p8 }
 
 std/store:stored { out.v: check.sum }

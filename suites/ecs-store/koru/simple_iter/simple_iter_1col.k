@@ -1,8 +1,8 @@
 // simple_iter — ONE-COLUMN SLICE. Each timed pass advances ONE f64 column
-// through the sweep arm's row (px += vx) over a 10,000-row store. This is
+// through the query arm's row (px += vx) over a 10,000-row store. This is
 // NOT the full pos += vel workload: that writes three position columns per
-// row and lives in simple_iter.k, blocked today on the multi-column stored
-// write (KORU161, koru pin 690_118_sweep_arm_writes_two_columns).
+// row and lives in simple_iter.k, which compiles and runs since koru pins
+// 690_118 / 690_125 landed the multi-column stored write.
 //
 // Protocol: insert 10k rows, 100 untimed warmup passes, then 1000 timed
 // passes bracketed by std/time:now()/elapsed. total_ns / timed_iters is the
@@ -16,10 +16,10 @@
 // write to `out` fires its watch once.
 //
 // Spellings grounded in passing koru regression tests:
-//   f64 columns + sweep/stored write     690_111_plural_f64_columns_sweep
+//   f64 columns + query/stored write     690_111_plural_f64_columns_sweep
 //   declared capacity                    690_011_store_insert_capacity_full_branch
 //   insert under for-each                690_047_store_entity_take_auto_discharge_under_foreach
-//   sweep nested under for-each          690_067_store_each_momentary_sweep_nested
+//   query nested under for-each          690_067_store_each_momentary_sweep_nested
 //   clock bind + for `| done` chain      910/2111_prime_sieve_timed_loop, 430_008
 //   singleton f64 store + watch          690_021_store_f64_scalar_columns, 690_001
 import std/io
@@ -37,15 +37,15 @@ for(0..10000)
 ! each _ |> std/store:insert(ents) { px: 0.0, py: 0.0, pz: 0.0, vx: 1.0, vy: 1.0, vz: 1.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.px: e.px + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.px: e.px + e.vx }
 
 std/time:now(): start |> for(0..1000)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.px: e.px + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.px: e.px + e.vx }
 | done |> std/time:elapsed(start): d |> std/io:print.ln("total_ns {{ d.ns:d }}") |> std/io:print.ln("timed_iters 1000")
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { check.sum: check.sum + e.px }
+std/store:query(ents)
+! query e |> std/store:stored { check.sum: check.sum + e.px }
 
 std/store:stored { out.v: check.sum }

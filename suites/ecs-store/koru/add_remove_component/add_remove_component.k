@@ -13,12 +13,12 @@
 // costs. The reader compares; this file does not.
 //
 // Protocol: 10,000 rows { hp, b }; 100 untimed warmup passes; then a timed
-// block of 1000 set-passes (sweep writing b: 1) and a timed block of 1000
-// clear-passes (sweep writing b: 0), each printing its own total_ns line —
+// block of 1000 set-passes (query writing b: 1) and a timed block of 1000
+// clear-passes (query writing b: 0), each printing its own total_ns line —
 // the runner SUMS total_ns lines, so per-iteration ns = (t_set + t_clear) /
 // 1000, one iteration = add-on-all + remove-on-all, matching the reference
 // accounting. The reference interleaves add and remove each iteration; a
-// sweep has no completion branch to chain two sweeps inside one loop, so
+// query has no completion branch to chain two passes inside one loop, so
 // ours runs the set-passes consecutively then the clear-passes. For this
 // model the split is the same instruction stream — the write is
 // unconditional, so a second consecutive set costs exactly what an
@@ -29,13 +29,13 @@
 // Checksum: an idempotent workload's final state cannot encode its pass
 // count (upstream checks nothing at all). The oracle verifies the presence
 // semantics and row survival instead: after the timed blocks, one set-pass
-// then a guarded sweep accumulates hp over rows with b == 1 (+10000), one
-// clear-pass then the same guard (+0), and a full sweep accumulates hp over
+// then a guarded query accumulates hp over rows with b == 1 (+10000), one
+// clear-pass then the same guard (+0), and a full query accumulates hp over
 // every surviving row (+10000). checksum 20000.
 //
 // Spellings grounded in passing koru regression tests:
 //   presence write + `when` guard          690_122_presence_column_add_remove
-//   cross-store accumulate in a sweep      690_096_refused_store_decl_does_not_cascade
+//   cross-store accumulate in a query      690_096_refused_store_decl_does_not_cascade
 //   insert under for-each, capacity        690_047, 690_011
 //   clock bind + for `| done` chain        910/2111, and simple_iter_1col.k (measured)
 import std/io
@@ -53,36 +53,36 @@ for(0..10000)
 ! each _ |> std/store:insert(ents) { hp: 1, b: 0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.b: 1 }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.b: 1 }
 
 for(0..100)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.b: 0 }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.b: 0 }
 
 std/time:now(): tstart |> for(0..1000)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.b: 1 }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.b: 1 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}")
 
 std/time:now(): tstart |> for(0..1000)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.b: 0 }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.b: 0 }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}") |> std/io:print.ln("timed_iters 1000")
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { e.b: 1 }
+std/store:query(ents)
+! query e |> std/store:stored { e.b: 1 }
 
-std/store:sweep(ents)
-! sweep g when g.b == 1 |> std/store:stored { check.sum: check.sum + g.hp }
+std/store:query(ents)
+! query g when g.b == 1 |> std/store:stored { check.sum: check.sum + g.hp }
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { e.b: 0 }
+std/store:query(ents)
+! query e |> std/store:stored { e.b: 0 }
 
-std/store:sweep(ents)
-! sweep g when g.b == 1 |> std/store:stored { check.sum: check.sum + g.hp }
+std/store:query(ents)
+! query g when g.b == 1 |> std/store:stored { check.sum: check.sum + g.hp }
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { check.sum: check.sum + e.hp }
+std/store:query(ents)
+! query e |> std/store:stored { check.sum: check.sum + e.hp }
 
 std/store:stored { out.v: check.sum }

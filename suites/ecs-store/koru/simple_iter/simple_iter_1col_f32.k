@@ -20,15 +20,15 @@ for(0..10000)
 ! each _ |> std/store:insert(ents) { px: 0.0, py: 0.0, pz: 0.0, vx: 1.0, vy: 1.0, vz: 1.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.px: e.px + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.px: e.px + e.vx }
 
 std/time:now(): start |> for(0..1000)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.px: e.px + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.px: e.px + e.vx }
 | done |> std/time:elapsed(start): d |> std/io:print.ln("total_ns {{ d.ns:d }}") |> std/io:print.ln("timed_iters 1000")
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { check.sum: check.sum + e.px }
+std/store:query(ents)
+! query e |> std/store:stored { check.sum: check.sum + e.px }
 
 std/store:stored { out.v: check.sum }

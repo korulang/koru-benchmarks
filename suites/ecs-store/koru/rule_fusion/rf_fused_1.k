@@ -1,5 +1,5 @@
 // rf_fused_1 — the same 1 rule bodies as rf_stripe_1/rf_sweeps_1, hand-fused
-// into ONE sweep whose stored block writes all 1 columns per row (the
+// into ONE query whose stored block writes all 1 columns per row (the
 // multi-column write simple_iter.k uses; koru 690_118/125). One corpus pass
 // per frame serving 1 rules — the schedule O13's fusion claim says the
 // stripe should reach. rf_fused_1 is program-identical to rf_sweeps_1 by
@@ -20,15 +20,15 @@ for(0..10000)
 ! each _ |> std/store:insert(ents) { vx: 1.0, p1: 0.0, p2: 0.0, p3: 0.0, p4: 0.0, p5: 0.0, p6: 0.0, p7: 0.0, p8: 0.0 }
 
 for(0..100)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.p1: e.p1 + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.p1: e.p1 + e.vx }
 
 std/time:now(): tstart |> for(0..1000)
-! each _ |> std/store:sweep(ents)
-    ! sweep e |> std/store:stored { e.p1: e.p1 + e.vx }
+! each _ |> std/store:query(ents)
+    ! query e |> std/store:stored { e.p1: e.p1 + e.vx }
 | done |> std/time:elapsed(start: tstart): td |> std/io:print.ln("total_ns {{ td.ns:d }}") |> std/io:print.ln("timed_iters 1000")
 
-std/store:sweep(ents)
-! sweep r |> std/store:stored { check.sum: check.sum + r.p1 + r.p2 + r.p3 + r.p4 + r.p5 + r.p6 + r.p7 + r.p8 }
+std/store:query(ents)
+! query r |> std/store:stored { check.sum: check.sum + r.p1 + r.p2 + r.p3 + r.p4 + r.p5 + r.p6 + r.p7 + r.p8 }
 
 std/store:stored { out.v: check.sum }

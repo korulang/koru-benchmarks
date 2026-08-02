@@ -15,6 +15,20 @@ criterion, same machine, same workload, same rules. Two entries measure a
 cost the design *refuses to have*; those get category-boundary labels, never
 win-quotes.
 
+**Surface migration, 2026-08-02 — the ports had gone dark.** koru `19d9393d`
+renamed the store read verbs: `sweep` became `query`, and the old `query` (a
+standing statement over rows) became `rule`. Every port here was written
+before that landed, so a full-board correctness check found **22/22 BLOCKED**
+— `unknown tor 'std.store:sweep'` and the KORU161 cascade behind it. Nothing
+in this suite had compiled for a day and the board did not know. The ports
+are migrated (`std/store:sweep` / `! sweep e` → `std/store:query` /
+`! query e`; `std/store:query` / `! query s` → `std/store:rule` / `! row s`)
+and re-verified against their oracles: **22/22 compile and checksum exactly**
+at koru `9388426a`. The timing tables below were taken at `d49f3e31`, BEFORE
+the rename; they are not re-measured here. This pass is correctness only.
+The `rf_sweeps_N` port filenames keep the old word — renaming them would
+break the result JSON keys the fusion table quotes.
+
 ## Board
 
 ### One-to-one (ballpark entries — same workload, meetable protocol)
@@ -215,9 +229,9 @@ reproducible from the shape named.
   take `[0]` (succeeds), insert again, take `[0]` → `empty`, with a live row
   sitting in slot 0. So "take the first row N times" drains exactly one row,
   and drain-by-literal-handles works only until the first slot reuse.
-- **`take` with a sweep-bound row miscompiles.** `! sweep r |>
+- **`take` with a query-bound row miscompiles.** `! query r |>
   std/store:take(items[r])` emits `handler(.{ .row = r })` with `r`
-  undeclared in the emitted Zig — BACKEND_COMPILE_ERROR. The sweep's row
+  undeclared in the emitted Zig — BACKEND_COMPILE_ERROR. The query's row
   binding does not thread into a take index (the same nesting family as koru
   690_110/112, where a row binding does not survive nesting).
 - **Consequence of the two above: no drain/clear idiom exists.** A store
