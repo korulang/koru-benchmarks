@@ -516,17 +516,41 @@ sites that rebind the row (690_086 rules 4 and 5), owned columns and their
 `[tree]` store. It changes how EVERY rule lowers, so it wants its own
 regression test plus the 690/695/670 clusters green before it lands.
 
-**Suggested order when it is taken up**, cheapest safety condition first:
-1. Derive the rule projection from the body (the 3.91x). Under-projection
-   fails LOUDLY as an unknown identifier in the emitted Zig, which is the safe
-   direction to be wrong in.
-2. Emit `for (0..len)` when the body provably contains no `take` on this store
-   (the 1.45x). Needs only a boolean out of the same walk.
-3. Pass the handle cursor only when the body addresses the row by handle
+**Step 2 of three is LANDED** (koru `8b0dcd4a`). A rule that cannot remove a
+row now gets the query path's `for (0..len)`. The condition is WHOLE-PROGRAM,
+not per-arm, because a `take` reached through a called flow is invisible to a
+scan of the rule's own body: if the program never mentions take, no row can be
+removed from anywhere by construction. Deliberately blunt — one mention
+anywhere keeps every rule in that program on the tolerant form.
+
+| port | before | after | speedup |
+|---|---|---|---|
+| `rf_stripe_1` | 13597 | **12275** | 1.11x |
+| `rf_stripe_2` | 27563 | **24697** | 1.12x |
+| `rf_stripe_4` | 55617 | **50264** | 1.11x |
+| `rf_stripe_8` | 111486 | **101519** | 1.10x |
+
+The query-path ports are unchanged within noise, as they must be. The row tax
+falls 6.31/5.90/5.77/5.52 to **5.67/5.32/5.44/5.32**. `690/695/670` ran 182
+passed with the same four known reds as before the change; the full 24-port
+board is green through `--check`.
+
+**1.10x where the loop form measures 1.45x in isolation, and that is Amdahl,
+not a disappointment** — with the 3.91x projection still in place the loop form
+can only return its share. It is also the argument for the order below: fix the
+largest term and every smaller one's share grows.
+
+**Remaining, largest first:**
+1. **Derive the rule projection from the body — the 3.91x, and the prize.**
+   `store.kz:1495` projects every user column unconditionally; the query path
+   at `7165` derives "every column the arm named" from a `used_cols` walk.
+   Under-projection fails LOUDLY as an unknown identifier in the emitted Zig,
+   which is the safe direction to be wrong in.
+2. Pass the handle cursor only when the body addresses the row by handle
    (the 1.22x).
 
-Compounded, that is the 6x — and it is the largest single unexploited number
-on this board.
+Compounded with what landed, that is still most of the 6x, and it remains the
+largest single unexploited number on this board.
 
 ### Dissolved-by-design (category-boundary entries — label or die)
 
