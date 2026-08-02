@@ -590,12 +590,55 @@ That chain is `__koru_handle_of(__koru_r)` at `store.kz:3122` followed by
 essentially the entire remaining 5.68x, and the mock understated it as badly as
 it overstated the projection. The decomposition's ORDERING was backwards.
 
-The fix already has its predicate: the same whole-program `may_remove` question
-that chose the loop form. A program that cannot remove a row cannot invalidate a
-dense index, so the rule path can carry the dense cursor the query path already
-carries (`__koru_sdix_`, the O10.iv elision at `store.kz:7023`) and skip the
-round-trip entirely. Not attempted yet; it is the next rung, and this time it
-will be sized against the real compiler before it goes on the board as a number.
+**LANDED, and it is the whole tax** (koru `94ae27eb`). The predicate was the
+same whole-program `may_remove` question that chose the loop form: a program
+that cannot remove a row cannot invalidate a dense index, so the rule pass now
+carries the dense cursor the query path already had (`__koru_sdix_`, the O10.iv
+elision) instead of a handle it resolves per access. Twenty scalar instructions
+become four:
+
+```
+ldr   q0, [x12, x10]      ; p1[i..i+1]
+ldr   q1, [x13], #0x10    ; vx[i..i+1]
+fadd.2d v0, v0, v1
+str   q0, [x12, x10]
+```
+
+Byte-for-byte the query path's loop. Sized on `probes/ab_codegen.py`, 21
+interleaved pairs against a 1.000x noise floor:
+
+| port | before | after | speedup |
+|---|---|---|---|
+| `rf_stripe_1` | 30489 | **5354** | **5.70x** |
+| `rf_stripe_8` | 236475 | **40985** | **5.77x** |
+
+(Absolute figures are from a loaded machine and are not board numbers; the
+RATIO is what the interleaved instrument protects, and both ports agree.)
+
+Falsifiers held: `rf_sweeps_1`, `rf_sweeps_8` and `simple_iter_f32` compile to
+BYTE-IDENTICAL machine code before and after, as query-path ports must.
+`690/695/670` unchanged at their known reds; `--check` 24/24.
+
+**So the decomposition was inverted, not imprecise.** The mock priced this rung
+at 1.22x and the projection — worth nothing — at 3.91x. Its smallest term was
+the entire prize and its largest did not exist. The two errors have one root:
+a mock reproduces the shape of emitted code and never its context, so it kept
+loads the optimizer deletes and modelled a four-deep dependent-load chain
+behind four panic branches as though it were arithmetic. The chain does not
+merely cost cycles — it makes the loop unvectorisable, which is a property of
+the surrounding code that a mock does not have.
+
+**The tell was free and available before any timing**: four instructions of
+`fadd.2d` against twenty scalar ones. Instruction SHAPE ranked the three terms
+correctly where the mock's timings ranked them backwards. Read the two loops
+before modelling either.
+
+What made it SAFE rather than merely fast is two rulings landed the same day.
+`store[cell]` names a row by handle, so no surface accepts a raw row index and
+the dense cursor is internal to the lowering; and brand 0 is reserved, so a
+dense index in a handle position traps loudly instead of addressing an
+unrelated slot. A taking pass still carries the handle — a swap-remove can move
+the row out from under a dense index mid-pass (690_031).
 
 ### The store-op vocabulary, sized (2026-08-02) — its headline member is worth nothing
 
