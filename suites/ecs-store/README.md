@@ -415,43 +415,57 @@ The identical loops over columns allocated as SEPARATE globals give 0.39 /
 0.62. So the whole write-only penalty is where two columns sit relative to
 each other, and nothing else.
 
-**And the stride is a tunable with a trade-off** (`column_stride.zig`, an
-`extern struct` so the padding is real and Zig cannot reorder it):
+**And the stride LOOKED like a tunable — but that claim did not survive the
+end-to-end test, and is retracted here.** `column_stride_isolated.zig` sweeps
+22 column strides with each shape measured in its OWN PROCESS (an earlier
+in-process sweep showed perfect anti-correlation with a conserved sum, which
+is what benchmark interference looks like; process isolation was the control).
+The effect is real:
 
 | column stride | write ns/row | rmw ns/row |
 |---|---|---|
-| 400000 B (`capacity: 50000`) | 0.941 | **0.624** |
-| 400064 B (+8 rows) | **0.587** | 0.864 |
-| 400128 B | 0.943 | 0.656 |
-| 400256 B | **0.582** | 0.879 |
-| 400512 B | 0.952 | 0.636 |
-| 401024 B | **0.600** | 0.904 |
-| 402048 B | 0.979 | 0.658 |
-| 404096 B | **0.590** | 0.870 |
+| 400000 B | 0.940 | **0.621** |
+| 400016 B | **0.579** | 0.840 |
+| 400032 B | 0.940 | **0.609** |
+| 400048 B | **0.580** | 0.837 |
+| 400128 B | 0.951 | 0.654 |
 
-Two regimes, alternating, and they move in OPPOSITE directions: the strides
-that are good for writes (~1.6x) are bad for read-modify-write (~1.37x). This
-is a trade-off surface, not a free win, and no explanation of the alternation
-is offered here — the pattern does not fall out of 4K aliasing or of a simple
-set-index model, and pinning it needs hardware counters.
+Across all 22 strides the two shapes correlate at **r = -0.976**. Write spread
+1.65x, rmw spread 1.46x, and **no stride is good for both** — it is a pure
+trade, not a win.
 
-What it means for the store, which is the actionable part:
+> **RETRACTED: "the declared capacity picks the regime".** The previous
+> revision of this section claimed a store's `capacity` silently selects which
+> regime every query runs in, since a column stride is `capacity x width`.
+> Tested end to end in real Koru — the same program at `capacity: 50000` and
+> `capacity: 50002`, both loops still visiting 50000 rows — and it is **false**:
+> write 0.958 -> 0.953, rmw 0.637 -> 0.632. No flip. The mock predicted 1.62x.
+> The mock put `len` at offset 0 so its columns began at offset 8; koru's
+> struct puts the six columns first at offset 0 and then FIVE handle arrays
+> (`__koru_hslot_row`, `__koru_hslot_gen`, `__koru_row_hslot`,
+> `__koru_hslot_free`, ~1.4 MB) in the same `.auto`-layout allocation. Same
+> stride, different phase — and the effect tracks the absolute base addresses
+> of the columns, not the stride between them.
 
-- **The declared capacity silently picks which regime every query in the
-  program runs in.** A column stride is `capacity x width`; the +64 B row
-  above is literally `capacity: 50008` instead of `50000`. Nobody chose that,
-  and it is worth 1.6x on write-heavy passes in one direction and 1.37x on
-  read-heavy passes in the other.
-- **This is the layout lever, and it is real, measured, and currently
-  unmanaged.** Padding each column to a chosen stride is a change the store
-  can make alone — no surface change, no user-visible semantics.
-- **It is NOT free, so it needs a policy rather than a constant.** Which
-  regime is right depends on whether a store's queries are write-heavy or
-  read-heavy, which the compiler can SEE: it already knows every query's read
-  and write set at emission time.
-- The store's own code is not the problem. On read-modify-write, `std/store`
-  is within 5% of hand-written Zig over the same layout. That is worth stating
-  plainly after a day of hunting compiler defects that turned out not to exist.
+**So the answer to "does stride padding pay off immediately" is NO**, for
+three measured reasons:
+
+- The two shapes anti-correlate at r = -0.976. Any padding that helps
+  write-heavy passes hurts read-modify-write by a comparable factor.
+- `simple_iter`, the board's flagship entry and its declared falsifier, is
+  pure read-modify-write. Write-favourable padding would make the headline
+  number ~37% worse.
+- The cheap lever does not work anyway. Capacity does not move it; a real
+  attempt needs explicit padding fields plus an `extern` layout so Zig cannot
+  reorder, and that has not been tested end to end.
+
+**Methodology note, earned three times today.** Every extrapolation from a
+hand-written mock to the real store was WRONG (the prefetch mechanism, the
+capacity lever). Every claim measured against the real store held (codegen
+parity on rmw, the contiguity penalty, the fold latency bound). Mocks were
+excellent for KILLING hypotheses — envelope, announce, prefetch, len-hoisting
+all died cheaply in Zig — and unreliable for establishing them. Kill in the
+mock; confirm in the compiler.
 
 ### Dissolved-by-design (category-boundary entries — label or die)
 
