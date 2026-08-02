@@ -340,6 +340,69 @@ several accumulators or a log-depth tree, is worth up to an order of
 magnitude on this shape. Today every aggregate written as a sweep accumulator
 pays 3.16 cycles per element, serially, no matter how wide the machine is.
 
+### The read ladder (2026-08-02) — writing LESS data costs MORE time
+
+`probes/read_ladder.py`, results in `results/read-ladder-2026-08-02.json`.
+Writes held fixed at k=3 per row; reads varied 0 / k / 2k over the same store.
+Run at f32/f64 **and** i32/i64, because "is this a float property?" deserved
+an answer rather than an assumption.
+
+| shape | reads/row | f64 | f32 | f64/f32 | i64 | i32 | i64/i32 |
+|---|---|---|---|---|---|---|---|
+| `write` `e.p_i: 1.0` | 0 | 48750 | 14997 | **3.25x** | 48679 | 14959 | **3.25x** |
+| `copy` `e.p_i: e.v_i` | 3 | 49005 | 19318 | 2.54x | 48951 | 19387 | 2.52x |
+| `rmw` `e.p_i: e.p_i + e.v_i` | 6 | 32432 | 21774 | **1.49x** | 32287 | 21716 | **1.49x** |
+
+**Answer to the question asked: yes, the width dividend is governed by the
+READ count.** It falls monotonically, 3.25x at zero reads to 1.49x at six.
+And **float and integer are identical to two decimal places at every rung**,
+so the f32/f64 asymmetry that three probes chased was never a float property
+at all — it is width and access shape, nothing else. That retires the last
+framing of it as an FP question.
+
+**But the absolute numbers say something louder, and it is the session's
+strangest result: `rmw` is FASTER than `write`.** 32432 ns against 48750,
+while moving three times the bytes. `write` and `copy` cost the same as each
+other (48750 vs 49005) despite `copy` moving twice what `write` does — the
+signature of a fixed per-row cost rather than bandwidth. Every explanation
+that would have been comfortable is ruled out: the emitted Zig is
+structurally IDENTICAL across the three shapes (same envelope, same three
+`__store_envwrite` calls, only the value expression differs), and all six
+loops are vectorized — no scalar fallback anywhere.
+
+**The mechanism shows itself when the store fits in L1:**
+
+| shape | L1 (N=2000, 93 KB store) | L2 (N=50000) | degradation |
+|---|---|---|---|
+| `write` | **0.223** ns/row | 0.975 | **4.38x** |
+| `copy` | 0.282 | 0.980 | 3.47x |
+| `rmw` | **0.346** ns/row | 0.649 | **1.87x** |
+
+**In L1 the ordering is sane and bytes-ordered — write cheapest, rmw dearest.
+Out of L1 it INVERTS.** A store-only stream degrades 4.38x where a
+read-modify-write degrades 1.87x. That is the classic shape of **store
+streams going unprefetched**: hardware prefetchers train on loads, so an
+RMW's reads pull the lines in and its writes then land warm, while a
+write-only pass stalls on every line it touches. Consistent with everything
+measured, and still a MECHANISM NOT A PROOF — confirming it needs hardware
+counters.
+
+What it means for the store, which is the actionable part:
+
+- **A query that writes columns without reading them is the store's worst
+  access shape above L1, and it is a shape the surface actively encourages.**
+  `e.b: 1` — set a presence column, clear a flag, initialise a field — reads
+  nothing. `add_remove_component`'s entire timed loop is exactly this, so
+  that entry is paying the penalty right now.
+- The fix is not a layout change. It is a **prefetch, or one warming load,
+  issued ahead of a store-only column stream** — worth up to ~1.5x on
+  write-heavy passes, on the evidence above, and costing nothing on the
+  shapes that already read.
+- It also sharpens the fold result above. Two of the store's three basic
+  per-row shapes are now bound by something other than the work they do: a
+  fold by accumulator latency, a store-only write by unprefetched lines. Only
+  read-modify-write is actually running at memory speed.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype
