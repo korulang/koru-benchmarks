@@ -221,6 +221,66 @@ follows directly: the deferred scheduling change at store.kz:3371 is worth
 is worth **5.5–6.3x at every N**. The row tax is the bigger prize by a
 factor of three, and it is the one nobody has scheduled.
 
+### The iteration scaling probe (2026-08-02) — and a retraction
+
+`probes/iter_scaling.py`, results in `results/iter-scaling-2026-08-02.json`.
+32 generated ports: the `simple_iter` workload at N in 1250..250000, both
+widths, 1 and 3 columns, so the read set sweeps 9 KB (deep L1) to 11.7 MB
+(deep L2). The N=10000 points are controls and reproduce this board within
+2.1%. These ports live OUTSIDE `koru/` on purpose — the published board's
+interleave set stays fixed.
+
+**Retraction first.** A ratio taken across the four published `simple_iter`
+points said the f32 three-column port scaled 1.83x worse than linear, which
+read as a defect worth ~26%. It was an artifact. `simple_iter_1col_f32` has
+an 80 KB read set and is **L1-resident**; every other port in the family
+spills to L2. Using it as the linear baseline compared two memory regimes and
+manufactured a defect. At matched residency (N >= 20000, all L2) the f32
+3col/1col ratio is a stable **3.58–3.64x** against a theoretical 3.0x, and
+the f64 ratio is 3.02–3.22x. The probe exists so this comparison cannot be
+made blind again.
+
+**What survives, and it is the real finding: the store sustains a FLAT byte
+rate across a 12.5x range of N, and the two widths sustain DIFFERENT rates.**
+
+| series | N=20000 | 50000 | 100000 | 250000 | sustained |
+|---|---|---|---|---|---|
+| f32 1col | 96.9 | 99.4 | 99.3 | 99.6 | **~99 GB/s** |
+| f32 3col | 81.1 | 82.9 | 81.3 | 83.6 | **~82 GB/s** |
+| f64 1col | 111.6 | 110.4 | 112.9 | 110.1 | **~111 GB/s** |
+| f64 3col | 106.7 | 111.1 | 105.0 | 107.5 | **~108 GB/s** |
+
+- **No cliff.** From a 937 KB working set to 11.7 MB the rate does not move.
+  The README's O13 note called the bandwidth-bound regime unentered; it is
+  entered here, and the store's iteration holds its rate through it. That is
+  a positive architectural result and the first one this suite has produced
+  about SCALE rather than about a single size.
+- **f64 sustains more bytes/s than f32, at every size, at both column
+  counts.** Not a rounding effect: 108 vs 82 GB/s on the three-column form,
+  stable across four sizes.
+- **The loops are instruction-identical.** Disassembled both: 3 x (2 loads +
+  one `fadd` + one store) per iteration, no unrolling in either, and exactly
+  **96 bytes moved per iteration in both** (f32 covers 4 rows with `fadd.4s`,
+  f64 covers 2 with `fadd.2d`). Per-iteration cost is nevertheless **1.72 ns
+  for f32 against 1.36 ns for f64**, stable from N=20000 to N=250000. Same
+  instructions, same bytes, 26% different cost.
+- **The one visible asymmetry is addressing.** The f32 loop walks six
+  independently post-incremented pointers (`ldr q1, [x0], #0x10`); the f64
+  loop walks ONE base register with register offsets (`ldr q1, [x1, x11]`).
+  That is six address-generation updates per iteration against roughly one.
+  It is the only structural difference in the emitted code and it is a
+  candidate, NOT a proven cause — separating it needs hardware counters.
+- **So ~23% is on the table in the f32 path**, now measured against a
+  properly matched baseline (f64's own achieved L2 rate) rather than the L1
+  one that produced the retracted claim. At f64's byte rate the N=20000 f32
+  port would be 6810 ns instead of 8881.
+
+Three hypotheses died with evidence on the way here, which is the probe
+earning its keep: the hot loop is NOT scalar (it is 4-wide NEON, and the
+store's whole write envelope — field selector, five dead value slots, the
+announce calls — is elided by the optimizer); the widths are NOT unrolled
+differently; and the original scaling anomaly was NOT a defect.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype
