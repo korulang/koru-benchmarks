@@ -380,28 +380,78 @@ loops are vectorized — no scalar fallback anywhere.
 
 **In L1 the ordering is sane and bytes-ordered — write cheapest, rmw dearest.
 Out of L1 it INVERTS.** A store-only stream degrades 4.38x where a
-read-modify-write degrades 1.87x. That is the classic shape of **store
-streams going unprefetched**: hardware prefetchers train on loads, so an
-RMW's reads pull the lines in and its writes then land warm, while a
-write-only pass stalls on every line it touches. Consistent with everything
-measured, and still a MECHANISM NOT A PROOF — confirming it needs hardware
-counters.
+read-modify-write degrades 1.87x.
+
+> **RETRACTED, same day, by the next probe.** This section first attributed
+> the inversion to *store streams going unprefetched* — prefetchers train on
+> loads, so an RMW's reads warm the lines its writes land on. That mechanism
+> is **wrong**. Adding explicit `@prefetch` to the write stream makes it
+> SLOWER (0.392 → 0.60 ns/row), and plain Zig writing the same three columns
+> shows no inversion at all. The real cause is below, and it is not in the
+> compiler.
+
+### What the inversion actually is (2026-08-02) — column placement
+
+`probes/zig/`, three small Zig programs, because the way to test whether the
+compiler is at fault is to hand-write the same loops and compare.
+
+| shape | hand-written Zig | std/store | verdict |
+|---|---|---|---|
+| rmw | 0.620 ns/row | 0.649 | **parity — the store's codegen is exonerated** |
+| write-only | 0.392 ns/row | 0.975 | 2.5x apart, and NOT the compiler |
+
+Everything plausible was ruled out by reproducing it in Zig rather than by
+argument. **The write envelope is free** — `envelope_vs_direct.zig` shows the
+six-slot `__store_envwrite` with its runtime `field` switch costs 0.395
+against a direct store's 0.393; LLVM folds the switch and the five dead slots
+completely. **`announce` is free** — the watch-notification read-back
+(`__store_peek` returning a union whose every arm is empty) does not cost
+anything either. **Hoisting the `len` bound out of the loop changes nothing.**
+
+**What reproduces it is the layout, exactly.** `contiguous_columns.zig` puts
+the six columns in ONE struct with `len`, the way the store emits them, and
+lands on 0.961–0.978 write / 0.645–0.661 rmw — koru measures 0.975 / 0.649.
+The identical loops over columns allocated as SEPARATE globals give 0.39 /
+0.62. So the whole write-only penalty is where two columns sit relative to
+each other, and nothing else.
+
+**And the stride is a tunable with a trade-off** (`column_stride.zig`, an
+`extern struct` so the padding is real and Zig cannot reorder it):
+
+| column stride | write ns/row | rmw ns/row |
+|---|---|---|
+| 400000 B (`capacity: 50000`) | 0.941 | **0.624** |
+| 400064 B (+8 rows) | **0.587** | 0.864 |
+| 400128 B | 0.943 | 0.656 |
+| 400256 B | **0.582** | 0.879 |
+| 400512 B | 0.952 | 0.636 |
+| 401024 B | **0.600** | 0.904 |
+| 402048 B | 0.979 | 0.658 |
+| 404096 B | **0.590** | 0.870 |
+
+Two regimes, alternating, and they move in OPPOSITE directions: the strides
+that are good for writes (~1.6x) are bad for read-modify-write (~1.37x). This
+is a trade-off surface, not a free win, and no explanation of the alternation
+is offered here — the pattern does not fall out of 4K aliasing or of a simple
+set-index model, and pinning it needs hardware counters.
 
 What it means for the store, which is the actionable part:
 
-- **A query that writes columns without reading them is the store's worst
-  access shape above L1, and it is a shape the surface actively encourages.**
-  `e.b: 1` — set a presence column, clear a flag, initialise a field — reads
-  nothing. `add_remove_component`'s entire timed loop is exactly this, so
-  that entry is paying the penalty right now.
-- The fix is not a layout change. It is a **prefetch, or one warming load,
-  issued ahead of a store-only column stream** — worth up to ~1.5x on
-  write-heavy passes, on the evidence above, and costing nothing on the
-  shapes that already read.
-- It also sharpens the fold result above. Two of the store's three basic
-  per-row shapes are now bound by something other than the work they do: a
-  fold by accumulator latency, a store-only write by unprefetched lines. Only
-  read-modify-write is actually running at memory speed.
+- **The declared capacity silently picks which regime every query in the
+  program runs in.** A column stride is `capacity x width`; the +64 B row
+  above is literally `capacity: 50008` instead of `50000`. Nobody chose that,
+  and it is worth 1.6x on write-heavy passes in one direction and 1.37x on
+  read-heavy passes in the other.
+- **This is the layout lever, and it is real, measured, and currently
+  unmanaged.** Padding each column to a chosen stride is a change the store
+  can make alone — no surface change, no user-visible semantics.
+- **It is NOT free, so it needs a policy rather than a constant.** Which
+  regime is right depends on whether a store's queries are write-heavy or
+  read-heavy, which the compiler can SEE: it already knows every query's read
+  and write set at emission time.
+- The store's own code is not the problem. On read-modify-write, `std/store`
+  is within 5% of hand-written Zig over the same layout. That is worth stating
+  plainly after a day of hunting compiler defects that turned out not to exist.
 
 ### Dissolved-by-design (category-boundary entries — label or die)
 
