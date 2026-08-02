@@ -467,6 +467,67 @@ excellent for KILLING hypotheses — envelope, announce, prefetch, len-hoisting
 all died cheaply in Zig — and unreliable for establishing them. Kill in the
 mock; confirm in the compiler.
 
+### The standing-rule row tax, DECOMPOSED (2026-08-02)
+
+`probes/zig/row_tax_decomposition.zig`, one variant per process. `rf_stripe_1`
+and `rf_sweeps_1` run the SAME rule body over the same 10k-row 9-column store
+and sit **6.31x** apart. Three things differ in the emitted code at once, so
+the mock separates them:
+
+| variant | ns/pass | vs query path |
+|---|---|---|
+| A `for` + projected read set (the QUERY path) | 3782 | 1.00x |
+| B `while` + len re-read + projected | 5488 | **1.45x** |
+| C `for` + full nine-column row | 14769 | **3.91x** |
+| E `for` + full row + handle resolve | 17970 | 4.75x |
+| D `while` + full row + handle (the RULE path) | 22745 | **6.01x** |
+
+The mock reproduces the real 6.31x at 6.01x, so the decomposition is trusted.
+**The projection is the prize at 3.91x**; the loop form is 1.45x and the
+per-row handle resolve 1.22x on top.
+
+**Every one of the three is the rule path not using a mechanism the query path
+already has.** That is the whole finding, and it means none of this is new
+invention:
+
+- **Projection.** `koru_std/store.kz:1495` — *"Project every USER column and
+  let the binding address them"* — loops over all `user_field_count` columns
+  unconditionally, and the old authored-projection code below it is already
+  dead behind `if (false)`. The query path at `store.kz:7165` derives its
+  projection instead: *"every column the arm named, in declaration order"*,
+  filtered by a `used_cols` array that `SRewrite.walkCont` fills while it
+  rewrites the body.
+- **Loop form.** `store.kz:3228` emits, for rules, a `while (i < s.len)` that
+  re-reads `len`, saves `len_before`, and increments conditionally — row
+  removal tolerance, so a `take` under a rule re-checks the swapped-in row
+  (690_031). That conditional increment is a loop-carried dependency on a
+  LOAD, which defeats vectorisation outright. The query path emits
+  `for (0..s.len)` and tolerates no removal.
+- **Handle.** `store.kz:3122` passes `__koru_handle_of(__koru_r)` as the
+  body's row cursor on every row, whether or not the body addresses the row
+  by handle.
+
+**Why this is not a five-line change.** `SRewrite` is declared INSIDE the
+sweep lowering function (`store.kz:6992`), so the rule path cannot call it,
+and the rule path has no take-detection at all — both fixes need a body walk
+that does not exist yet on that side. Getting it right means handling nested
+sites that rebind the row (690_086 rules 4 and 5), owned columns and their
+`__koru_qproj_` mangling, char columns, and the synthesized `parent` of a
+`[tree]` store. It changes how EVERY rule lowers, so it wants its own
+regression test plus the 690/695/670 clusters green before it lands.
+
+**Suggested order when it is taken up**, cheapest safety condition first:
+1. Derive the rule projection from the body (the 3.91x). Under-projection
+   fails LOUDLY as an unknown identifier in the emitted Zig, which is the safe
+   direction to be wrong in.
+2. Emit `for (0..len)` when the body provably contains no `take` on this store
+   (the 1.45x). Needs only a boolean out of the same walk.
+3. Pass the handle cursor only when the body addresses the row by handle
+   (the 1.22x).
+
+Compounded, that is the 6x — and it is the largest single unexploited number
+on this board.
+
 ### Dissolved-by-design (category-boundary entries — label or die)
 
 - `fragmented_iter` — 26 component types × 20 entities; measures **archetype
