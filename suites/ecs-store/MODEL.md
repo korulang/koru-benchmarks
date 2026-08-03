@@ -139,16 +139,50 @@ Three things the measurement separates that the claim conflated:
    rule work rides along in the fused pass too. *One corpus read is not one
    corpus cost.* At 10k rows everything is cache-resident; O13's napkin was
    1M rows, and that bandwidth-bound regime was never entered.
-3. **The standing-rule tax dwarfs the fusion question.** A stripe pass costs
-   **6-7x** its imperative-sweep twin at every N — identical rule bodies,
-   identical pass count. The difference is per-row: a full-row load regardless
-   of the rule's read set, a doubled handle resolve, and a centralized
-   nine-value write envelope.
+3. ~~**The standing-rule tax dwarfs the fusion question.** A stripe pass costs
+   **6-7x** its imperative-sweep twin at every N.~~ **RETIRED 2026-08-03 — the
+   tax is GONE, and the last of it was never per-row cost at all.**
 
-That ordering is the actionable output. Retiring the per-row standing-rule tax
-is worth 6-7x at every N; building the deferred scheduling change is worth 2x
-at N=8. The tax is the bigger prize and nobody was looking at it, because the
-argument was about fusion.
+**MEASURED 2026-08-03** (`results/latest-inprocess.json`, interleaved, oracles
+verified on every port). The standing rule is now FASTER than the imperative
+twin, and the lead grows with N:
+
+| N | `rf_stripe` | `rf_sweeps` | stripe/sweeps | vs. the 07-31 board |
+|---|---:|---:|---:|---:|
+| 1 | 2174 | 2154 | 1.01x | 6.25x faster |
+| 2 | 4344 | 4610 | **0.94x** | — |
+| 4 | 8741 | 9391 | **0.93x** | — |
+| 8 | 17517 | 21132 | **0.83x** | 6.36x faster |
+
+So the compiled-reactivity claim now holds on its own instrument: **writing the
+reactive spelling costs less than hand-writing the imperative one**, at every N
+above 1, with the advantage widening as rules are added. Hand-fusion
+(`rf_fused_8` = 12544) remains 1.40x ahead of the stripe, so item 2's dividend
+stands and is still worth having — it is simply no longer competing with a tax
+six times its size.
+
+**Two of the three per-row costs named above never existed.** The projection is
+derived from the arm's body, not the full row; and collapsing the doubled
+resolve, or hoisting three resolves to one, each measured EXACTLY NEUTRAL
+against an interleaved control — the optimizer had already removed both. (An
+attempt to restructure the resolve measured 3.7x WORSE than the bug it targeted.
+See `koru/concepts/frag-a-cost-the-optimizer-deletes-was-never-there.md`.)
+
+**The whole of the remaining difference was VECTORIZATION**, and it was gated by
+a text match. The dense-cursor rung had already shipped, but the store enabled it
+only when the program "may not remove", and that predicate was a substring search
+for `take` over the entire program text. It matched `taken` — the store's own
+obligation state — so any program with an `[entity(...)]` discharger silently
+kept the handle round-trip, whose panic sites forbid vectorization: 0.77 vs 4.8
+cycles/row, SIMD register references in `_main` 16 vs 7. Measured directly: the
+word `mistake` inside a string literal moved `rf_stripe_1` from 2260 to 13806
+ns/iter with an identical checksum. The predicate now matches a real
+`std/store:take` invocation scoped to this store.
+
+**Note what this means for the board's own honesty:** `rule_fusion` contains no
+`take`, so the suite was measuring the fast path all along while every program
+that despawns got the slow one. A benchmark that avoids the hazard also avoids
+the guard.
 
 ## What the iteration path actually emits today
 
