@@ -141,6 +141,21 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   Closing that (span-mode or lazy render, gated on what the match arms
   consume) is std/parser work in the koru toolchain, tracked here so the
   number cannot quietly rot again.
+- 2026-08-25 LANE-CONTRACT GAP CLOSED (koru `73e51357`). The dispatch no
+  longer eagerly computes render/depth/inner when no consuming arm reads them
+  (gated on the arm's produce AND destructure, mirroring genTail's walk).
+  Recognizer arms (`| value _ |> _`) skip the whole tree serialization.
+  Board: koru 74.9 MB/s (74.4 74.9 71.9) — the pure-Zig lane now leads parsec
+  6x and megaparsec 3.2x, restoring the banked "leads the Haskell combinators"
+  claim, and closes most of the gap to nom (277.7). cliff gate right=624247 /
+  left=628393 (parity, both ~10x the allocator-fix heights).
+  Progression on the day: 0.2 (broken) -> 7.0 (allocator+protocol) -> 74.9
+  (lazy render) = ~375x. Remaining open: pure-Koru still trails nom and ->C
+  because it builds the node tree during every parse (span-mode would skip
+  even that); and tree-construction mallocs remain. All 14 641_PARSER
+  regressions pass.
+
+Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
