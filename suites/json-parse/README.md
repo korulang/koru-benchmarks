@@ -110,6 +110,21 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   each with its rep spread. The rival drifts run-to-run (866-899 across
   sessions); a koru number from one run over a rival number from another is
   not a comparison, so we never form the ratio that way.
+- 2026-08-25 RED (SHOWN), koru `0462b31f`. The pure-Zig recognizer lane
+  collapsed. Same-run board (M2 Pro, best-of-3, this suite's protocol,
+  MEASURED, same grammar + same machine body): recognizer/general-lib koru
+  0.2 (reps 0.2 0.2 0.2) / recognizer/general-lib koru->C 569.4 (569.4 538.0
+  563.5) / recognizer/general-lib nom 276.5 / parsec 12.2 / megaparsec 22.5 /
+  recognizer/specialized hand-rolled 887.5; validate-tokens zig Scanner 347.5;
+  full-tree parsec 5.1 / serde_json 191.5 / zig std.json Value 99.5 /
+  python json.loads 134.3. THE sentence: koru (Zig emit) fell from 537 to
+  0.2 MB/s (~2500x) while its own ->C sibling holds 569 MB/s in the same run
+  — the pure-Zig parser backend has dropped its anchored-prefix first-byte
+  fast path. Pinned: `regex.prefixFirstBytes(...) catch [true]**256` at the
+  pattern/rule-head codegen sites admits every byte, so every terminal probes
+  every alternative via the slow general matcher. RED = a toolchain defect
+  named, not a measurement artifact; ->C and the hand-rolled/peer rivals
+  still bracket the healthy range, so the grid is intact except for this lane.
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
