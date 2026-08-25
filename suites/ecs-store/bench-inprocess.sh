@@ -61,7 +61,7 @@ compile_port() {
   local name="$1" src="$2"
   local w="$TMP/$name"; rm -rf "$w"; mkdir -p "$w"; cp "$src" "$w/prog.k"
   # koruc clobbers its CWD (backend.zig, a.out, ...) — always build in the tmp dir.
-  if ! ( cd "$w" && "$KORUC" build prog.k >compile.log 2>&1 ) || [ ! -x "$w/a.out" ]; then
+  if ! ( cd "$w" && "$KORUC" build --release=fast prog.k >compile.log 2>&1 ) || [ ! -x "$w/a.out" ]; then
     local diag; diag="$(grep -m1 -E 'error\[' "$w/compile.log" || tail -1 "$w/compile.log")"
     printf '%-22s BLOCKED — %s\n' "$name" "$diag"
     printf '"%s": {"status": "blocked", "diagnostic": %s},\n' \
