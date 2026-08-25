@@ -53,6 +53,10 @@ build_lang() {
       local kdir="$SUITE/koru/$name"; [ -f "$kdir/$name.k" ] || return 1
       local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
+    koru-fold)
+      local kdir="$SUITE/koru-fold/$name"; [ -f "$kdir/$name.k" ] || return 1
+      local w="$TMP/kf_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
+      ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     cmap)     [ -f "$cdir/$name.map.c" ] && cc -O2 -o "$out" "$cdir/$name.map.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
@@ -76,9 +80,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru c cmap rust haskell ocaml osprey c3 odin)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru c cmap rust haskell ocaml osprey c3 odin
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "----" "-------" "-----" "------" "--" "----"
+LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----"
 
 for kdir in "$SUITE"/koru/*/; do
   name="$(basename "$kdir")"
@@ -114,8 +118,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
   unset ms
 done
 
@@ -184,6 +188,7 @@ out = {
         "min_runs": int(os.environ["MINRUNS"]),
         "flags": {
             "koru": "koruc build (ReleaseFast)",
+            "koru-fold": "koruc build (ReleaseFast) — flat fold/identity port",
             "c": "cc -O2",
             "rust": "rustc -C opt-level=3 -C overflow-checks=off",
             "haskell": "ghc -O2",

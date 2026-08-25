@@ -60,6 +60,34 @@ through current `koruc` and matches its oracle):
   kernel: ~3.2 ms — still ahead of Koru, but the gap is ~1.4x, not ~2.2x, and
   C's "win" is the map, not the language. Port was previously listed as
   "blocked"; it landed behind a one-line `event`→`tor` migration.
+- `wordfreq` **fold (`koru-fold` column)** — **GREEN (SHOWN)** `900036`, beats
+  the whole board at **1.8 ms**. The weighted checksum `sum((k+1)*counts[k])`
+  telescopes to `sum(bucket_i+1)`, so the counter table never needs to exist:
+  one branchless fold over the token stream. This is the same algebraic
+  reduction clang applies to the C reference — and Koru's Zig IR produces the
+  same magic-numbered, branchless inner loop, so the fold *matches and edges*
+  cheat-C (2.0 ms). Faithfulness note: it is not a changed algorithm — it is
+  the map the oracle's own structure hides.
+
+## The `koru-fold` column
+
+`koru-fold` is the flat fold / algebraic-identity variant of a kernel — the
+reduction the oracle actually computes, stripped of any data structure the
+naive form carries for faithfulness. It exists as a **distinct column** only
+where it differs from the faithful port:
+
+- **`wordfreq`** — distinct: faithful port is a string-map; the fold is the
+  telescoped checksum (above). The only kernel where the identity exists.
+- Kernel classes that do NOT get a fold cell: single-accumulator kernels
+  whose faithful port *already is* the flat fold (`digitsum`, `factorial`,
+  `gcdsum`, `isqrt`, `josephus`, `nestedloop`, `powmod`, `primes`, `mutual`,
+  `collatz`) — a fold column there would be the same binary twice; and the
+  genuinely recursive kernels (`fib`, `hanoi`, `ackermann`, `tak`, `pascal`,
+  `coins`) where flattening would change the algorithm the suite preserves.
+  The infrastructure is wired for all kernels; a cell appears only when an
+  honest fold realization exists.
+
+## Oracles
 
 ## Oracles
 
