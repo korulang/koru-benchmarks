@@ -155,6 +155,19 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   even that); and tree-construction mallocs remain. All 14 641_PARSER
   regressions pass.
 
+- 2026-08-25 SPAN MODE LANDS — the nom lead is back (koru `67ccc78f`). The
+  pure-Zig recognizer no longer builds the node tree at all when no arm reads
+  it: rules return flat spans, zero node allocations. Board: koru 549.5
+  (549.5 544.0 547.0) — a 1.96x lead over Rust nom (281.0), matching the
+  July-18 banked 537, within 5% of the ->C sibling (575.5) and the only
+  remaining gaps being the specialized hand-rolled (894.5). Day progression:
+  0.2 (RED) -> 7.0 (allocator+protocol) -> 74.9 (lazy render) -> 549.5
+  (span mode). The tree feature that cost the lead in the first place
+  (80f86b93, 2026-07-20) is now opt-in by consumption: arms that traverse
+  render/depth/leaf/tag/kids keep the full tree. 12 tree/span 641_PARSER
+  regressions pass.
+
+
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
