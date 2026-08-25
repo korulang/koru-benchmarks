@@ -110,21 +110,37 @@ Board history (M2 Pro, best-of-3, this suite's protocol — MEASURED only):
   each with its rep spread. The rival drifts run-to-run (866-899 across
   sessions); a koru number from one run over a rival number from another is
   not a comparison, so we never form the ratio that way.
-- 2026-08-25 RED (SHOWN), koru `0462b31f`. The pure-Zig recognizer lane
-  collapsed. Same-run board (M2 Pro, best-of-3, this suite's protocol,
-  MEASURED, same grammar + same machine body): recognizer/general-lib koru
-  0.2 (reps 0.2 0.2 0.2) / recognizer/general-lib koru->C 569.4 (569.4 538.0
-  563.5) / recognizer/general-lib nom 276.5 / parsec 12.2 / megaparsec 22.5 /
-  recognizer/specialized hand-rolled 887.5; validate-tokens zig Scanner 347.5;
-  full-tree parsec 5.1 / serde_json 191.5 / zig std.json Value 99.5 /
-  python json.loads 134.3. THE sentence: koru (Zig emit) fell from 537 to
-  0.2 MB/s (~2500x) while its own ->C sibling holds 569 MB/s in the same run
-  — the pure-Zig parser backend has dropped its anchored-prefix first-byte
-  fast path. Pinned: `regex.prefixFirstBytes(...) catch [true]**256` at the
-  pattern/rule-head codegen sites admits every byte, so every terminal probes
-  every alternative via the slow general matcher. RED = a toolchain defect
-  named, not a measurement artifact; ->C and the hand-rolled/peer rivals
-  still bracket the healthy range, so the grid is intact except for this lane.
+- 2026-08-25 RED → PARTIALLY FIXED (SHOWN), after this run's follow-up turned
+  up two toolchain defects and one suite defect. Correction of record first:
+  this entry's first version pinned the wrong cause (`prefixFirstBytes`
+  fallback) — that gate is intact; the diagnosis below supersedes it, and the
+  lesson (profile the binary before reading the generator) is recorded in koru
+  `767797d0`'s World Model.
+  1. Allocator (fixed, koru `767797d0`): std/parser's generated Zig node
+     helpers (__leaf/__wrap/__render) allocated every tree node via
+     heap.page_allocator — an mmap syscall per node, thousands per parse.
+     Swapped to c_allocator: 0.2 -> ~7 MB/s (~28x). All 14 641_PARSER
+     regressions pass; the cliff gate went right-nested 2274 -> 62074 passes.
+  2. Protocol (fixed, this commit): bench_json.sh itself built the koru entry
+     with bare `koruc build` — the SAME ReleaseFast lie the compute board had,
+     in a second driver. Now `--release=fast`. Every zig baseline was already
+     ReleaseFast, so the lane was cross-compilation-handicapped before this.
+  3. Lane-contract violation (OPEN — named gap): this suite defines the
+     recognizer lane as "validates + returns spans. Builds no tree." The
+     std/parser Zig emit violates that: it materializes a full node tree AND
+     eagerly renders it to a string (__render/__depth/__inner computed before
+     any match arm runs) even when the consumer discards everything. The ->C
+     sibling obeys the contract (spans only) — which is the real reason the
+     two koru columns sit ~80x apart: they are not the same work.
+  Post-fix board (M2 Pro, best-of-3, corrected protocol): recognizer/
+  general-lib koru 7.0 (6.6 6.6 7.0) / koru->C 555.0 / nom 279.0 / megaparsec
+  23.2 / parsec 12.0; specialized hand-rolled 896.7; validate-tokens Scanner
+  349.2; full-tree serde_json 189.1 / zig Value 101.9 / python 131.7 /
+  parsec 5.0. THE sentence: with both defects fixed, pure-Koru still trails
+  its own peers because it pays for a tree the lane says it must not build.
+  Closing that (span-mode or lazy render, gated on what the match arms
+  consume) is std/parser work in the koru toolchain, tracked here so the
+  number cannot quietly rot again.
 
 Known instrument constraints (each names a std/parser gap, AoC-pattern):
 

@@ -21,7 +21,7 @@ if pgrep -f 'run_regression.sh --no-cache' >/dev/null 2>&1; then
 fi
 
 echo "== build (koruc, sibling checkout) =="
-( cd "$ROOT/koru" && "$KORUC" build bench.k >/dev/null 2>&1 ) || { echo "koruc build FAILED" >&2; exit 1; }
+( cd "$ROOT/koru" && "$KORUC" build --release=fast bench.k >/dev/null 2>&1 ) || { echo "koruc build FAILED" >&2; exit 1; }
 ( cd "$ROOT/baseline" && zig build-exe -O ReleaseFast zig_scan.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_tree.zig >/dev/null 2>&1 && zig build-exe -O ReleaseFast zig_recognize.zig >/dev/null 2>&1 ) || { echo "zig baseline build FAILED" >&2; exit 1; }
 
 echo "== build contenders (general-library peers) =="
