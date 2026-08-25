@@ -37,7 +37,7 @@ if [ -z "${OSPREY:-}" ]; then
   fi
 fi
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s\n\n' \
+printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have rustc && echo present || echo ABSENT)" \
   "$(have ghc && echo present || echo ABSENT)" "$(have ocamlopt && echo present || echo ABSENT)" \
   "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
@@ -54,6 +54,7 @@ build_lang() {
       local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
+    cmap)     [ -f "$cdir/$name.map.c" ] && cc -O2 -o "$out" "$cdir/$name.map.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
     haskell) have ghc    && [ -f "$cdir/$name.hs" ] && ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$cdir/$name.hs" >/dev/null 2>&1 ;;
     # ocaml/osprey build commands mirror the vendored reference/osprey_run.sh
@@ -75,9 +76,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru c rust haskell ocaml osprey c3 odin)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru c rust haskell ocaml osprey c3 odin
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "-------" "-----" "------" "--" "----"
+LANGS=(koru c cmap rust haskell ocaml osprey c3 odin)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru c cmap rust haskell ocaml osprey c3 odin
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "----" "-------" "-----" "------" "--" "----"
 
 for kdir in "$SUITE"/koru/*/; do
   name="$(basename "$kdir")"
@@ -113,8 +114,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
   unset ms
 done
 
@@ -188,6 +189,7 @@ out = {
             "haskell": "ghc -O2",
             "ocaml": "ocamlopt -O3 -unsafe",
             "osprey": "osprey --compile (release)",
+            "cmap": "cc -O2 (hand-rolled string map)",
             "c3": "c3c compile -O5",
             "odin": "odin build -o:speed",
         },
@@ -198,6 +200,7 @@ out = {
         "haskell": os.environ["GHC_VERSION"],
         "ocaml": os.environ["OCAML_VERSION"],
         "osprey": os.environ["OSPREY_VERSION"],
+        "cmap": os.environ["CC_VERSION"],
         "c3": os.environ["C3C_VERSION"],
         "odin": os.environ["ODIN_VERSION"],
     },

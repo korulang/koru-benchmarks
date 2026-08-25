@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional, cast
 
-ORDER: list[str] = ["odin", "c3", "osprey", "osprey-gc", "rust", "c", "ocaml", "haskell",
+ORDER: list[str] = ["odin", "c3", "cmap", "osprey", "osprey-gc", "rust", "c", "ocaml", "haskell",
                     "osprey-wasm", "rust-wasm", "c-wasm"]
-LABEL: dict[str, str] = {"odin": "Odin", "c3": "C3", "osprey": "Osprey", "osprey-gc": "Osprey (GC)",
+LABEL: dict[str, str] = {"odin": "Odin", "c3": "C3", "cmap": "C (map)", "osprey": "Osprey", "osprey-gc": "Osprey (GC)",
                          "rust": "Rust", "c": "C", "ocaml": "OCaml", "haskell": "Haskell",
                          "osprey-wasm": "Osprey (wasm)", "rust-wasm": "Rust (wasm)",
                          "c-wasm": "C (wasm)"}

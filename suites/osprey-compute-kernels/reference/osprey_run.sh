@@ -38,9 +38,9 @@ MEMRUNS=${BENCH_MEMRUNS:-3}
 # Rust) first after Osprey so the gap to Osprey reads left-to-right. `osprey-gc`
 # is the SAME .osp compiled with the tracing GC backend (--memory=gc), so the
 # allocation cases (binarytrees) show reclamation next to the default backend.
-LANGS=(odin c3 osprey osprey-gc rust c ocaml haskell osprey-wasm rust-wasm c-wasm)
+LANGS=(odin c3 cmap osprey osprey-gc rust c ocaml haskell osprey-wasm rust-wasm c-wasm)
 typeset -A EXT
-EXT=(odin odin  c3 c3  osprey osp  osprey-gc osp  rust rs  c c  ocaml ml  haskell hs
+EXT=(odin odin  c3 c3  cmap map.c  osprey osp  osprey-gc osp  rust rs  c c  ocaml ml  haskell hs
      osprey-wasm osp  rust-wasm rs  c-wasm c)
 
 have() { command -v "$1" >/dev/null 2>&1 }
@@ -72,6 +72,7 @@ toolchain_ok() {
     odin)    command -v odin >/dev/null 2>&1 || [[ -x "$HOME/src/odin/odin" ]] ;;
     rust)    have rustc ;;
     c)       have cc ;;
+    cmap)     have cc ;;
     ocaml)   have ocamlopt ;;
     haskell) have ghc ;;
     osprey-wasm) [[ -x "$OSP" ]] && have wasmtime && [[ -f "$ROOT/compiler/lib/libosprey_runtime_wasm.a" ]] ;;
@@ -96,6 +97,7 @@ build() {
              mv -f "$TMP/$name" "$out" ;;
     rust)    rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$dir/$name.rs" 2>/dev/null ;;
     c)       cc -O2 -o "$out" "$dir/$name.c" 2>/dev/null ;;
+    cmap)     cc -O2 -o "$out" "$dir/$name.map.c" 2>/dev/null ;;
     ocaml)   cp "$dir/$name.ml" "$TMP/$name.ml" && \
              ( cd "$TMP" && ocamlopt -O3 -unsafe -o "$out" "$name.ml" >/dev/null 2>&1 ) ;;  # compile a copy: ocamlopt litters .cmi/.cmx/.o beside the source
     haskell) ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$dir/$name.hs" >/dev/null 2>&1 ;;

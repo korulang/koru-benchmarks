@@ -53,9 +53,12 @@ through current `koruc` and matches its oracle):
 
 - `wordfreq` — **GREEN (SHOWN)** `900036`. The first allocation-bearing kernel.
   Naive form is a 200k-iteration `Map<string,int>` HAMT aggregation through
-  `std/string-map`; Koru (4.5 ms) beats Rust/C3/Odin on the identical workload —
-  the reference C column cheats by never allocating (fixed `counts[8]`), so it
-  must be read outside the allocation class. Port was previously listed as
+  `std/string-map`; Koru (4.5 ms) beats Rust/C3/Odin on the identical workload.
+  The reference C column cheats by never allocating (fixed `counts[8]`), so a
+  dedicated **`cmap`** variant column (`wordfreq.map.c`, a hand-rolled chained
+  string map with real hashing) measures what plain C actually costs at this
+  kernel: ~3.2 ms — still ahead of Koru, but the gap is ~1.4x, not ~2.2x, and
+  C's "win" is the map, not the language. Port was previously listed as
   "blocked"; it landed behind a one-line `event`→`tor` migration.
 
 ## Oracles
