@@ -38,9 +38,9 @@ if [ -z "${OSPREY:-}" ]; then
 fi
 echo "Machine: $(uname -sm) · koruc: $KORUC"
 printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s\n\n' \
-  "$(have cc && echo present || echo ABSENT)" "$(have rustc && echo present || echo ABSENT)" \
-  "$(have ghc && echo present || echo ABSENT)" "$(have ocamlopt && echo present || echo ABSENT)" \
-  "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
+  "$(have cc && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
+  "$(have rustc && echo present || echo ABSENT)" "$(have ghc && echo present || echo ABSENT)" \
+  "$(have ocamlopt && echo present || echo ABSENT)" "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
   "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
   "$(command -v odin >/dev/null 2>&1 || [ -x "$HOME/src/odin/odin" ] && echo present || echo ABSENT)"
 
