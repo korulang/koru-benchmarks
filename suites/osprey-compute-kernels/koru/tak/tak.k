@@ -4,7 +4,7 @@
 // as binds, all three feeding the final recursive call.
 import std/io
 
-pub event tak { x: i64, y: i64, z: i64 } -> i64
+pub tor tak { x: i64, y: i64, z: i64 } -> i64
 
 tak = if(x > y)
 | then |> tak(x: x - 1, y, z): t1 |> tak(x: y - 1, y: z, z: x): t2 |> tak(x: z - 1, y: x, z: y): t3 |> tak(x: t1, y: t2, z: t3): v -> v

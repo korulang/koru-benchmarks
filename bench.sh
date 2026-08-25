@@ -37,10 +37,12 @@ if [ -z "${OSPREY:-}" ]; then
   fi
 fi
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s\n\n' \
+printf 'Toolchains: koru=present  c=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have rustc && echo present || echo ABSENT)" \
   "$(have ghc && echo present || echo ABSENT)" "$(have ocamlopt && echo present || echo ABSENT)" \
-  "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)"
+  "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
+  "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
+  "$(command -v odin >/dev/null 2>&1 || [ -x "$HOME/src/odin/odin" ] && echo present || echo ABSENT)"
 
 # build_lang <lang> <name> <out>  -> 0 on success (binary at <out>), 1 otherwise
 build_lang() {
@@ -50,13 +52,17 @@ build_lang() {
     koru)
       local kdir="$SUITE/koru/$name"; [ -f "$kdir/$name.k" ] || return 1
       local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
-      ( cd "$w" && "$KORUC" build "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
+      ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
     haskell) have ghc    && [ -f "$cdir/$name.hs" ] && ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$cdir/$name.hs" >/dev/null 2>&1 ;;
     # ocaml/osprey build commands mirror the vendored reference/osprey_run.sh
     # exactly (their own harness's flags), compiled from a copy because both
     # litter artifacts beside the source.
+    c3)      C3C=$(command -v c3c || echo "$HOME/src/c3/c3c")
+             [ -f "$cdir/$name.c3" ] && ( cd "$TMP" && "$C3C" compile "$cdir/$name.c3" -O5 -o "$out" >/dev/null 2>&1 ) ;;
+    odin)    ODIN=$(command -v odin || echo "$HOME/src/odin/odin")
+             [ -f "$cdir/$name.odin" ] && ( "$ODIN" build "$cdir/$name.odin" -file -o:speed -out:"$out" >/dev/null 2>&1 ) ;;
     ocaml)
       have ocamlopt && [ -f "$cdir/$name.ml" ] || return 1
       local mw="$TMP/ml_$name"; rm -rf "$mw"; mkdir -p "$mw"; cp "$cdir/$name.ml" "$mw/"
@@ -69,9 +75,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru c rust haskell ocaml osprey)
-printf '%-12s %10s %10s %10s %10s %10s %10s\n' kernel koru c rust haskell ocaml osprey
-printf '%-12s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "-------" "-----" "------"
+LANGS=(koru c rust haskell ocaml osprey c3 odin)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru c rust haskell ocaml osprey c3 odin
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-" "----" "-------" "-----" "------" "--" "----"
 
 for kdir in "$SUITE"/koru/*/; do
   name="$(basename "$kdir")"
@@ -107,8 +113,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[c]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
   unset ms
 done
 
@@ -144,6 +150,8 @@ if [ -z "$FILTER" ]; then
   GHC_VERSION="$(ghc --numeric-version 2>/dev/null | sed 's/^/ghc /' || echo ABSENT)" \
   OCAML_VERSION="$(ocamlopt -version 2>/dev/null | sed 's/^/ocamlopt /' || echo ABSENT)" \
   OSPREY_VERSION="$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && ("$OSPREY" --version 2>/dev/null | head -1 || echo "osprey (version unknown)") || echo ABSENT)" \
+  C3C_VERSION="$( (command -v c3c >/dev/null 2>&1 && c3c --version || "$HOME/src/c3/c3c" --version) 2>/dev/null | head -1 || echo ABSENT)" \
+  ODIN_VERSION="$( (command -v odin >/dev/null 2>&1 && odin version || "$HOME/src/odin/odin" version) 2>/dev/null | head -1 || echo ABSENT)" \
   python3 - <<'PYEOF'
 import json, os
 
@@ -180,6 +188,8 @@ out = {
             "haskell": "ghc -O2",
             "ocaml": "ocamlopt -O3 -unsafe",
             "osprey": "osprey --compile (release)",
+            "c3": "c3c compile -O5",
+            "odin": "odin build -o:speed",
         },
     },
     "toolchains": {
@@ -188,6 +198,8 @@ out = {
         "haskell": os.environ["GHC_VERSION"],
         "ocaml": os.environ["OCAML_VERSION"],
         "osprey": os.environ["OSPREY_VERSION"],
+        "c3": os.environ["C3C_VERSION"],
+        "odin": os.environ["ODIN_VERSION"],
     },
     "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
     "langs": langs_seen,

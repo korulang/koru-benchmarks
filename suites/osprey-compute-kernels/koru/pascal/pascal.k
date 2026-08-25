@@ -5,7 +5,7 @@
 // combined via the multi-bind produce (fib.k shape).
 import std/io
 
-pub event binom { n: i64, k: i64 } -> i64
+pub tor binom { n: i64, k: i64 } -> i64
 
 binom = if(k == 0)
 | then -> 1

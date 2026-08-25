@@ -8,9 +8,9 @@
 // bare returns, no single-variant tag unions.
 import std/io
 
-pub event is-even { n: i64 } -> i64
+pub tor is-even { n: i64 } -> i64
 
-pub event is-odd { n: i64 } -> i64
+pub tor is-odd { n: i64 } -> i64
 
 is-even = if(n == 0)
 | then -> 1

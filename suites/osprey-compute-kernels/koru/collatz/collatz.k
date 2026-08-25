@@ -6,7 +6,7 @@
 // nested arms via the single-return `-> i64` form.
 import std/io
 
-pub event collatz { n: i64 } -> i64
+pub tor collatz { n: i64 } -> i64
 
 collatz = if(n == 1)
 | then -> 0

@@ -6,7 +6,7 @@
 // 320_121/320_122). Single-return form: ONE output — scalar `-> i64`.
 import std/io
 
-pub event pow-mod { base: i64, e: i64, acc: i64 } -> i64
+pub tor pow-mod { base: i64, e: i64, acc: i64 } -> i64
 
 pow-mod = if(e == 0)
 | then -> acc

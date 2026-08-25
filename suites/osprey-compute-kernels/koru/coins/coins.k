@@ -9,7 +9,7 @@
 // `hanoi(n: n - 1, acc)` pattern) for the amount/kind that don't change.
 import std/io
 
-pub event coin { k: i64 } -> i64
+pub tor coin { k: i64 } -> i64
 
 coin = if(k == 1)
 | then -> 1
@@ -21,7 +21,7 @@ coin = if(k == 1)
             | then -> 25
             | else -> 50
 
-pub event ways { amount: i64, kind: i64 } -> i64
+pub tor ways { amount: i64, kind: i64 } -> i64
 
 ways = if(amount == 0)
 | then -> 1

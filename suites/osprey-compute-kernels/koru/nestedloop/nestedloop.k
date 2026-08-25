@@ -11,19 +11,19 @@
 // else arm and produce the tail bind.
 import std/io
 
-pub event loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
+pub tor loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
 
 loop-k = if(k == 0)
 | then -> acc
 | else |> loop-k(i, j, k: k - 1, acc: @rem(acc + i * j * k, 1000000007)): v -> v
 
-pub event loop-j { i: i64, j: i64, n: i64, acc: i64 } -> i64
+pub tor loop-j { i: i64, j: i64, n: i64, acc: i64 } -> i64
 
 loop-j = if(j == 0)
 | then -> acc
 | else |> loop-k(i, j, k: n, acc): kv |> loop-j(i, j: j - 1, n, acc: kv): v -> v
 
-pub event loop-i { i: i64, n: i64, acc: i64 } -> i64
+pub tor loop-i { i: i64, n: i64, acc: i64 } -> i64
 
 loop-i = if(i == 0)
 | then -> acc

@@ -6,7 +6,7 @@
 // shape from hanoi.k/tak.k for ack(m-1, ack(m, n-1)).
 import std/io
 
-pub event ack { m: i64, n: i64 } -> i64
+pub tor ack { m: i64, n: i64 } -> i64
 
 ack = if(m == 0)
 | then -> n + 1

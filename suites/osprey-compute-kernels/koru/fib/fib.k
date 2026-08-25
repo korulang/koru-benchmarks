@@ -4,7 +4,7 @@
 // (nestedloop shape) with the final `-> a + b` reading BOTH binds.
 import std/io
 
-pub event fib { n: i64 } -> i64
+pub tor fib { n: i64 } -> i64
 
 fib = if(n < 2)
 | then -> n

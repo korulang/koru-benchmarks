@@ -4,7 +4,7 @@
 // feeds the outer recursive call's arg — the nestedloop chain shape.
 import std/io
 
-pub event hanoi { n: i64, acc: i64 } -> i64
+pub tor hanoi { n: i64, acc: i64 } -> i64
 
 hanoi = if(n == 0)
 | then -> acc

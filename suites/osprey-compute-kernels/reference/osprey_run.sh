@@ -38,9 +38,9 @@ MEMRUNS=${BENCH_MEMRUNS:-3}
 # Rust) first after Osprey so the gap to Osprey reads left-to-right. `osprey-gc`
 # is the SAME .osp compiled with the tracing GC backend (--memory=gc), so the
 # allocation cases (binarytrees) show reclamation next to the default backend.
-LANGS=(osprey osprey-gc rust c ocaml haskell osprey-wasm rust-wasm c-wasm)
+LANGS=(odin c3 osprey osprey-gc rust c ocaml haskell osprey-wasm rust-wasm c-wasm)
 typeset -A EXT
-EXT=(osprey osp  osprey-gc osp  rust rs  c c  ocaml ml  haskell hs
+EXT=(odin odin  c3 c3  osprey osp  osprey-gc osp  rust rs  c c  ocaml ml  haskell hs
      osprey-wasm osp  rust-wasm rs  c-wasm c)
 
 have() { command -v "$1" >/dev/null 2>&1 }
@@ -68,6 +68,8 @@ wasm_wrap() { printf '#!/bin/sh\nexec wasmtime run "%s.wasm" "$@"\n' "$1" > "$1"
 toolchain_ok() {
   case "$1" in
     osprey|osprey-gc) [[ -x "$OSP" ]] ;;
+    c3)      have c3c || [[ -x "$HOME/src/c3/c3c" ]] ;;
+    odin)    command -v odin >/dev/null 2>&1 || [[ -x "$HOME/src/odin/odin" ]] ;;
     rust)    have rustc ;;
     c)       have cc ;;
     ocaml)   have ocamlopt ;;
@@ -84,6 +86,14 @@ build() {
   case "$lang" in
     osprey)    ( cd "$dir" && "$OSP" "$name.osp" --compile >/dev/null 2>&1 ) && mv -f "$dir/$name" "$out" ;;
     osprey-gc) ( cd "$dir" && "$OSP" "$name.osp" --memory=gc --compile >/dev/null 2>&1 ) && mv -f "$dir/$name" "$out" ;;
+    odin)    ODIN=$(command -v odin || echo "$HOME/src/odin/odin")
+             cp "$dir/$name.odin" "$TMP/" && \
+             ( cd "$TMP" && "$ODIN" build "$name.odin" -file -o:speed -out:"$TMP/$name" >/dev/null 2>&1 ) && \
+             mv -f "$TMP/$name" "$out" ;;
+    c3)      C3C=$(command -v c3c || echo "$HOME/src/c3/c3c")
+             cp "$dir/$name.c3" "$TMP/$name.c3" && \
+             ( cd "$TMP" && "$C3C" compile "$name.c3" -O2 -o "$TMP/$name" >/dev/null 2>&1 ) && \
+             mv -f "$TMP/$name" "$out" ;;
     rust)    rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$dir/$name.rs" 2>/dev/null ;;
     c)       cc -O2 -o "$out" "$dir/$name.c" 2>/dev/null ;;
     ocaml)   cp "$dir/$name.ml" "$TMP/$name.ml" && \

@@ -14,20 +14,20 @@
 // is faithful; the missing random builtin is the gap.
 import std/io
 
-pub event to-int { s: []const u8 } -> i64
+pub tor to-int { s: []const u8 } -> i64
 
 to-int = capture { n: 0[i64] }
 ! as a |> for(s)
     ! each ch |> captured { n: a.n * 10 + (ch - 48) }
 | captured r -> r.n
 
-pub event seed-of { v: i64 } -> i64
+pub tor seed-of { v: i64 } -> i64
 
 seed-of = if(v == 0)
 | then -> 1
 | else -> v
 
-pub event word { k: i64 } -> []const u8
+pub tor word { k: i64 } -> []const u8
 
 word = if(k == 0)
 | then -> "the"
@@ -45,20 +45,20 @@ word = if(k == 0)
                         | then -> "lazy"
                         | else -> "dog"
 
-pub event has-o { w: []const u8 } -> i64
+pub tor has-o { w: []const u8 } -> i64
 
 has-o = capture { found: 0[i64] }
 ! as a |> for(w)
     ! each ch |> captured { found: @max(a.found, @intFromBool(ch == 'o')) }
 | captured r -> r.found
 
-pub event starts-with-t { w: []const u8 } -> i64
+pub tor starts-with-t { w: []const u8 } -> i64
 
 starts-with-t = if(w[0] == 't')
 | then -> 1
 | else -> 0
 
-pub event score { w: []const u8 } -> i64
+pub tor score { w: []const u8 } -> i64
 
 score = has-o(w): o |> starts-with-t(w): t -> @as(i64, @intCast(w.len)) + o * 7 + t * 3
 

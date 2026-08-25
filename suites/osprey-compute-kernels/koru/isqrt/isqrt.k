@@ -8,13 +8,13 @@
 // pow-mod's style of recomputing the next-arg expression inline.
 import std/io
 
-pub event isqrt-iter { n: i64, x: i64 } -> i64
+pub tor isqrt-iter { n: i64, x: i64 } -> i64
 
 isqrt-iter = if(@divTrunc(x + @divTrunc(n, x), 2) >= x)
 | then -> x
 | else |> isqrt-iter(n, x: @divTrunc(x + @divTrunc(n, x), 2)): v -> v
 
-pub event isqrt { n: i64 } -> i64
+pub tor isqrt { n: i64 } -> i64
 
 isqrt = if(n < 2)
 | then -> n

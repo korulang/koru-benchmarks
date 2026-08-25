@@ -6,13 +6,13 @@
 // (loop events), collatz.k/primes.k (nested if).
 import std/io
 
-pub event gcd { a: i64, b: i64 } -> i64
+pub tor gcd { a: i64, b: i64 } -> i64
 
 gcd = if(b == 0)
 | then -> a
 | else |> gcd(a: b, b: @rem(a, b)): v -> v
 
-pub event loop-j { i: i64, j: i64, acc: i64 } -> i64
+pub tor loop-j { i: i64, j: i64, acc: i64 } -> i64
 
 loop-j = if(j == 0)
 | then -> acc
@@ -20,7 +20,7 @@ loop-j = if(j == 0)
     | then |> loop-j(i, j: j - 1, acc: acc + 1): v -> v
     | else |> loop-j(i, j: j - 1, acc): v -> v
 
-pub event loop-i { i: i64, n: i64, acc: i64 } -> i64
+pub tor loop-i { i: i64, n: i64, acc: i64 } -> i64
 
 loop-i = if(i == 0)
 | then -> acc

@@ -14,16 +14,16 @@ import std/io
 import std/string
 import std/string-map
 
-pub event r1 { x: i64 } -> i64
+pub tor r1 { x: i64 } -> i64
 r1 -> @rem(x * 16807, 2147483647)
 
-pub event hash-at { seed: i64, i: i64 } -> i64
+pub tor hash-at { seed: i64, i: i64 } -> i64
 hash-at = r1(x: seed + i): a |> r1(x: a): b -> b
 
-pub event bucket-of { h: i64 } -> i64
+pub tor bucket-of { h: i64 } -> i64
 bucket-of -> @rem(h, 8)
 
-pub event seed-of { line: []const u8 } -> i64
+pub tor seed-of { line: string } -> i64
 seed-of = std/string:from-page(text: line)
 | ok s |> std/string:parse-int(s)
     | ok v |> std/string:free(s) |> if(v == 0)
@@ -35,7 +35,7 @@ seed-of = std/string:from-page(text: line)
 // bump — the naive-phase mirror of the .osp's `bump(m,w) = mapSet(m, w,
 // mapGet(m, w) ?: 0 + 1)`: an 8-way dispatch on the bucket index, one
 // value/missing get-then-set pair per literal vocab word.
-pub event bump { m: *Map_string_i64<std/string-map:map>, k: i64 }
+pub tor bump { m: *Map_string_i64<std/string-map:map>, k: i64 }
 
 bump = if(k == 0)
 | then |> std/string-map:get(m, k: "the")
@@ -69,7 +69,7 @@ bump = if(k == 0)
                             | value v |> std/string-map:set(m, k: "dog", v: v + 1)
                             | missing |> std/string-map:set(m, k: "dog", v: 1)
 
-pub event count-of { m: *Map_string_i64<std/string-map:map>, key: []const u8 } -> i64
+pub tor count-of { m: *Map_string_i64<std/string-map:map>, key: string } -> i64
 count-of = std/string-map:get(m, k: key)
 | value v -> v
 | missing -> 0

@@ -6,7 +6,7 @@
 // as in mutual.k; C's `!has_factor` is `1 - h`.
 import std/io
 
-pub event has-factor { n: i64, d: i64 } -> i64
+pub tor has-factor { n: i64, d: i64 } -> i64
 
 has-factor = if(d * d > n)
 | then -> 0
@@ -14,7 +14,7 @@ has-factor = if(d * d > n)
     | then -> 1
     | else |> has-factor(n, d: d + 1): v -> v
 
-pub event is-prime { n: i64 } -> i64
+pub tor is-prime { n: i64 } -> i64
 
 is-prime = if(n < 2)
 | then -> 0

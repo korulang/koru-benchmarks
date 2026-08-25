@@ -8,7 +8,7 @@
 // recursion overhead this kernel used to carry).
 import std/io
 
-pub event digit-sum { n: i64 } -> i64
+pub tor digit-sum { n: i64 } -> i64
 
 digit-sum = if(n < 10)
 | then -> n

@@ -2,7 +2,9 @@
 
 22 naive compute kernels — integer recursion, folds, and data-structure stress —
 each ported to Koru and checked against an integer oracle. The reference
-implementations (five languages per kernel) and provenance live in `reference/`
+implementations (seven languages per kernel — C, Rust, OCaml, Haskell, C3 and
+Odin for the cross-language drag-race; Osprey is the native speaker) and
+provenance live in `reference/`
 (see `PROVENANCE.md`; vendored MIT from the
 [Osprey benchmark suite](https://www.ospreylang.dev/benchmarks/)). Osprey is a
 language by Christian Findlay / Nimblesite — <https://www.ospreylang.dev>
@@ -40,9 +42,21 @@ loop; the interesting frontier for how Koru expresses/runs non-tail recursion
 
 - `binarytrees`, `exprtree` — recursive **algebraic/union types** with record
   variants + destructuring `match` (absent in pure Koru today)
-- `listops` — persistent **list** with `[head, ...tail]` destructuring (absent)
-- `wordfreq` — `Map<string,int>` (`std/string-map` *exists*) + `input()` seed
-- `textstats` — immutable **string builtins** (`length`/`contains`/`startsWith`)
+- `textstats` — **RED (SHOWN)** `1574956`. Static text scan (string length /
+  `contains` / `startsWith`). Migrated `event`→`tor` and `[]const u8`→`string`,
+  but the seed-into-outer-capture refeed still trips the current punging rule
+  (KORU164 "captured: punning is mandatory") — a live idiom gap, not the
+  originally-projected missing string builtins.
+
+**Run-verified beyond the fold** (where "run-verified" means the kernel compiles
+through current `koruc` and matches its oracle):
+
+- `wordfreq` — **GREEN (SHOWN)** `900036`. The first allocation-bearing kernel.
+  Naive form is a 200k-iteration `Map<string,int>` HAMT aggregation through
+  `std/string-map`; Koru (4.5 ms) beats Rust/C3/Odin on the identical workload —
+  the reference C column cheats by never allocating (fixed `counts[8]`), so it
+  must be read outside the allocation class. Port was previously listed as
+  "blocked"; it landed behind a one-line `event`→`tor` migration.
 
 ## Oracles
 
