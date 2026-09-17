@@ -36,13 +36,20 @@ if [ -z "${OSPREY:-}" ]; then
     OSPREY="$(command -v osprey || true)"
   fi
 fi
+# Mojo builds through the pixi env in the sibling modular checkout (same
+# convention as ../koru for koruc); MOJO_MANIFEST overrides the manifest path.
+PIXI="$(command -v pixi || echo "$HOME/.pixi/bin/pixi")"
+MOJO_MANIFEST="${MOJO_MANIFEST:-$ROOT/../modular/Mojo/pixi.toml}"
+mojo_ok() { [ -x "$PIXI" ] && [ -f "$MOJO_MANIFEST" ]; }
+
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s\n\n' \
+printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
   "$(have rustc && echo present || echo ABSENT)" "$(have ghc && echo present || echo ABSENT)" \
   "$(have ocamlopt && echo present || echo ABSENT)" "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
   "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
-  "$(command -v odin >/dev/null 2>&1 || [ -x "$HOME/src/odin/odin" ] && echo present || echo ABSENT)"
+  "$(command -v odin >/dev/null 2>&1 || [ -x "$HOME/src/odin/odin" ] && echo present || echo ABSENT)" \
+  "$(mojo_ok && echo present || echo ABSENT)"
 
 # build_lang <lang> <name> <out>  -> 0 on success (binary at <out>), 1 otherwise
 build_lang() {
@@ -68,6 +75,8 @@ build_lang() {
              [ -f "$cdir/$name.c3" ] && ( cd "$TMP" && "$C3C" compile "$cdir/$name.c3" -O5 -o "$out" >/dev/null 2>&1 ) ;;
     odin)    ODIN=$(command -v odin || echo "$HOME/src/odin/odin")
              [ -f "$cdir/$name.odin" ] && ( "$ODIN" build "$cdir/$name.odin" -file -o:speed -out:"$out" >/dev/null 2>&1 ) ;;
+    mojo)    mojo_ok && [ -f "$cdir/$name.mojo" ] && \
+             ( "$PIXI" run --manifest-path "$MOJO_MANIFEST" mojo build "$cdir/$name.mojo" -o "$out" >/dev/null 2>&1 ) ;;
     ocaml)
       have ocamlopt && [ -f "$cdir/$name.ml" ] || return 1
       local mw="$TMP/ml_$name"; rm -rf "$mw"; mkdir -p "$mw"; cp "$cdir/$name.ml" "$mw/"
@@ -80,9 +89,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----"
+LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin mojo)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin mojo
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----" "----"
 
 for kdir in "$SUITE"/koru/*/; do
   name="$(basename "$kdir")"
@@ -118,8 +127,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}"
   unset ms
 done
 
@@ -157,6 +166,7 @@ if [ -z "$FILTER" ]; then
   OSPREY_VERSION="$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && ("$OSPREY" --version 2>/dev/null | head -1 || echo "osprey (version unknown)") || echo ABSENT)" \
   C3C_VERSION="$( (command -v c3c >/dev/null 2>&1 && c3c --version || "$HOME/src/c3/c3c" --version) 2>/dev/null | head -1 || echo ABSENT)" \
   ODIN_VERSION="$( (command -v odin >/dev/null 2>&1 && odin version || "$HOME/src/odin/odin" version) 2>/dev/null | head -1 || echo ABSENT)" \
+  MOJO_VERSION="$(mojo_ok && ("$PIXI" run --manifest-path "$MOJO_MANIFEST" mojo --version 2>/dev/null | head -1 || echo "mojo (version unknown)") || echo ABSENT)" \
   python3 - <<'PYEOF'
 import json, os
 
@@ -197,6 +207,7 @@ out = {
             "cmap": "cc -O2 (hand-rolled string map)",
             "c3": "c3c compile -O5",
             "odin": "odin build -o:speed",
+            "mojo": "mojo build (default -O3)",
         },
     },
     "toolchains": {
@@ -208,6 +219,7 @@ out = {
         "cmap": os.environ["CC_VERSION"],
         "c3": os.environ["C3C_VERSION"],
         "odin": os.environ["ODIN_VERSION"],
+        "mojo": os.environ["MOJO_VERSION"],
     },
     "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
     "langs": langs_seen,
