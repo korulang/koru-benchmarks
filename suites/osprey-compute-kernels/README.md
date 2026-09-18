@@ -87,7 +87,52 @@ where it differs from the faithful port:
   The infrastructure is wired for all kernels; a cell appears only when an
   honest fold realization exists.
 
-## Oracles
+## The `bend` / `bend-par` columns
+
+Bend 2 (HigherOrderCO, `bend 2.0.5`, BendRT → native via clang) is the
+board's first parallel-capable column. `bend/<name>/<name>.bend` is the
+faithful sequential port — **all 22 kernels are ported and oracle-green**.
+`bend-par/<name>/<name>.bend` is the same algorithm forked, either by
+splitting the loop range (recursive `psum` halving, 8 leaves) or by
+forking the recursive calls themselves (`a b = f(x) g(y)`) above a depth
+cutoff, so "what does fork-join buy" is a measured number, not a claim.
+Par ports exist where a fork is meaningful (17 kernels); `hanoi`,
+`josephus`, `exprtree`, `listops`, `ackermann` are absent — their
+recurrence is sequential or their leaves too few.
+
+Port-specific caveats, documented in each file:
+
+- `@unsafe` — Bend's mandatory termination checker only accepts a
+  recursive argument that is a match-exposed predecessor. Kernels whose
+  recursion shrinks by `div`/`mod`/`sub` or a computed value sit outside
+  Bend's proof guarantees: `tak`, `collatz`, `digitsum`, `gcdsum`,
+  `coprime`, `primes`, `isqrt`, `coins` (8 of 22 — `ackermann` needs no
+  escape; shrink-first argument order satisfies the checker).
+- 48-bit `Nat` — Bend's `Nat` aborts past 2^48-1 and there is no 64-bit
+  integer type (`U32` wraps, `Word(n)` is a dependent bitvector with no
+  div/mod). `factorial`, `powmod`, `exprtree` compute `(a*b) mod p` with
+  intermediates up to ~10^18, so their products are emulated by a
+  doubling mulmod (~20-30x the arithmetic per multiply). This is the
+  honest reason `powmod` runs ~50x behind C.
+- No `if`, no matching on locals — every branch is `match` on a `Bool`
+  parameter, so computed conditions are hoisted into explicit flag
+  parameters (`coprime`'s `gcd==1`, `primes`'s `d*d>n`, `mutual`'s
+  is-even). Bend also has no forward references between `def`s (no
+  mutual recursion), so `mutual`'s is_even/is_odd pair is folded into
+  one `eo(n, flag)` def.
+- No stdin in `IO` — the four seeded kernels (`exprtree`, `listops`,
+  `textstats`, `wordfreq`) fix `seed = 1`, the reference's mode-0
+  deterministic path the oracle is generated for.
+- `wordfreq`'s reference counts array indices (its vocab is
+  `(void)`-unused), so the honest port is an 8-field record indexed by
+  the hashed slot, not a string-keyed map.
+- `binarytrees`/`pascal`/`coins` `bend-par` fork only above a depth
+  cutoff — naive full-fork measured ~4x *slower* (values crossing the
+  fork boundary). `binarytrees`-par still loses to sequential.
+
+Note the board is driven by `reference/cases/` (all 22 kernels), so a
+kernel with no Koru port — `binarytrees`, `exprtree`, `listops` — still
+gets a row showing what the gap costs in the other languages.
 
 ## Oracles
 

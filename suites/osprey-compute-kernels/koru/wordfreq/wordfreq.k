@@ -35,7 +35,7 @@ seed-of = std/string:from-page(text: line)
 // bump — the naive-phase mirror of the .osp's `bump(m,w) = mapSet(m, w,
 // mapGet(m, w) ?: 0 + 1)`: an 8-way dispatch on the bucket index, one
 // value/missing get-then-set pair per literal vocab word.
-pub tor bump { m: *Map_string_i64<std/string-map:map>, k: i64 }
+pub tor bump { m: *std/string-map:Map_string_i64<map>, k: i64 }
 
 bump = if(k == 0)
 | then |> std/string-map:get(m, k: "the")
@@ -69,7 +69,7 @@ bump = if(k == 0)
                             | value v |> std/string-map:set(m, k: "dog", v: v + 1)
                             | missing |> std/string-map:set(m, k: "dog", v: 1)
 
-pub tor count-of { m: *Map_string_i64<std/string-map:map>, key: string } -> i64
+pub tor count-of { m: *std/string-map:Map_string_i64<map>, key: string } -> i64
 count-of = std/string-map:get(m, k: key)
 | value v -> v
 | missing -> 0

@@ -4,7 +4,7 @@
 // 1574956) on the oracle-checked path: seed line "0"/empty -> seed 1,
 // hashAt(seed,i) = r1(r1(seed+i)) with r1(x) = x*16807 mod 2147483647,
 // word(k) an 8-way fixed vocab, score = len + 7*has-o + 3*starts-t.
-// String ops are per-char folds over []const u8 (810_121/810_182 shapes),
+// String ops are per-char folds over string (810_121/810_182 shapes),
 // w.len (660_001) and w[0] indexing (010_062) — no substring builtins
 // needed for single-char needles.
 // KNOWN DIVERGENCE (named gap): the reference's mode "1" draws a
@@ -14,7 +14,7 @@
 // is faithful; the missing random builtin is the gap.
 import std/io
 
-pub tor to-int { s: []const u8 } -> i64
+pub tor to-int { s: string } -> i64
 
 to-int = capture { n: 0[i64] }
 ! as a |> for(s)
@@ -27,7 +27,7 @@ seed-of = if(v == 0)
 | then -> 1
 | else -> v
 
-pub tor word { k: i64 } -> []const u8
+pub tor word { k: i64 } -> string
 
 word = if(k == 0)
 | then -> "the"
@@ -45,20 +45,20 @@ word = if(k == 0)
                         | then -> "lazy"
                         | else -> "dog"
 
-pub tor has-o { w: []const u8 } -> i64
+pub tor has-o { w: string } -> i64
 
 has-o = capture { found: 0[i64] }
 ! as a |> for(w)
     ! each ch |> captured { found: @max(a.found, @intFromBool(ch == 'o')) }
 | captured r -> r.found
 
-pub tor starts-with-t { w: []const u8 } -> i64
+pub tor starts-with-t { w: string } -> i64
 
 starts-with-t = if(w[0] == 't')
 | then -> 1
 | else -> 0
 
-pub tor score { w: []const u8 } -> i64
+pub tor score { w: string } -> i64
 
 score = has-o(w): o |> starts-with-t(w): t -> @as(i64, @intCast(w.len)) + o * 7 + t * 3
 
@@ -66,7 +66,7 @@ capture { seed: 1[i64] }
 ! as sd |> std/io:read-lines()
     ! line l |> to-int(s: l): v |> seed-of(v): sv |> captured { seed: sv }
     | done _ |> _
-    | failed _ |> captured { seed: sd.seed }
+    | failed _ |> captured { sd.seed }
 | captured r |> capture { acc: 0[i64] }
     ! as a |> for(0..200000)
         ! each i |> word(k: @rem(@rem(@rem((r.seed + @as(i64, @intCast(i))) * 16807, 2147483647) * 16807, 2147483647), 8)): w |> score(w): s |> captured { acc: a.acc + s }

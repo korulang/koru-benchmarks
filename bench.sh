@@ -41,15 +41,25 @@ fi
 PIXI="$(command -v pixi || echo "$HOME/.pixi/bin/pixi")"
 MOJO_MANIFEST="${MOJO_MANIFEST:-$ROOT/../modular/Mojo/pixi.toml}"
 mojo_ok() { [ -x "$PIXI" ] && [ -f "$MOJO_MANIFEST" ]; }
+# Bend 2 installs a self-updating launcher under ~/.bend (its documented
+# installer); BEND env overrides. BEND_NO_TELEMETRY silences its per-run ping.
+if [ -z "${BEND:-}" ]; then
+  if [ -x "$HOME/.bend/bin/bend" ]; then
+    BEND="$HOME/.bend/bin/bend"
+  else
+    BEND="$(command -v bend || true)"
+  fi
+fi
+bend_ok() { [ -n "$BEND" ] && [ -x "$BEND" ]; }
 
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s\n\n' \
+printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
   "$(have rustc && echo present || echo ABSENT)" "$(have ghc && echo present || echo ABSENT)" \
   "$(have ocamlopt && echo present || echo ABSENT)" "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
   "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
   "$(command -v odin >/dev/null 2>&1 || [ -x "$HOME/src/odin/odin" ] && echo present || echo ABSENT)" \
-  "$(mojo_ok && echo present || echo ABSENT)"
+  "$(mojo_ok && echo present || echo ABSENT)" "$(bend_ok && echo present || echo ABSENT)"
 
 # build_lang <lang> <name> <out>  -> 0 on success (binary at <out>), 1 otherwise
 build_lang() {
@@ -85,19 +95,30 @@ build_lang() {
       [ -n "$OSPREY" ] && [ -x "$OSPREY" ] && [ -f "$cdir/$name.osp" ] || return 1
       local ow="$TMP/osp_$name"; rm -rf "$ow"; mkdir -p "$ow"; cp "$cdir/$name.osp" "$ow/"
       ( cd "$ow" && "$OSPREY" "$name.osp" --compile >/dev/null 2>&1 ) && [ -x "$ow/$name" ] && mv -f "$ow/$name" "$out" ;;
+    bend)
+      bend_ok && [ -f "$SUITE/bend/$name/$name.bend" ] || return 1
+      local bw="$TMP/b_$name"; rm -rf "$bw"; mkdir -p "$bw"; cp "$SUITE/bend/$name/$name.bend" "$bw/"
+      ( cd "$bw" && BEND_NO_TELEMETRY=1 "$BEND" "$name.bend" -o "$name" >/dev/null 2>&1 ) && [ -x "$bw/$name" ] && mv -f "$bw/$name" "$out" ;;
+    bend-par)
+      bend_ok && [ -f "$SUITE/bend-par/$name/$name.bend" ] || return 1
+      local bw="$TMP/bp_$name"; rm -rf "$bw"; mkdir -p "$bw"; cp "$SUITE/bend-par/$name/$name.bend" "$bw/"
+      ( cd "$bw" && BEND_NO_TELEMETRY=1 "$BEND" "$name.bend" -o "$name" >/dev/null 2>&1 ) && [ -x "$bw/$name" ] && mv -f "$bw/$name" "$out" ;;
     *) return 1 ;;
   esac
 }
 
-LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin mojo)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin mojo
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----" "----"
+LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
 
-for kdir in "$SUITE"/koru/*/; do
-  name="$(basename "$kdir")"
-  [ -f "$kdir/$name.k" ] || continue
+# The board is driven by reference/cases (the complete 22-kernel list), not by
+# the koru/ ports — a kernel Koru can't express yet must still show its row so
+# the other columns report what the gap costs.
+for casedir in "$SUITE"/reference/cases/*/; do
+  name="$(basename "$casedir")"
+  [ -f "$casedir/expected.txt" ] || continue
   [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
-  oracle="$(sed 's/[[:space:]]*$//' "$kdir/expected.txt")"
+  oracle="$(sed 's/[[:space:]]*$//' "$casedir/expected.txt")"
 
   declare -A ms=()
   for lang in "${LANGS[@]}"; do
@@ -127,8 +148,8 @@ for kdir in "$SUITE"/koru/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
   unset ms
 done
 
@@ -167,6 +188,7 @@ if [ -z "$FILTER" ]; then
   C3C_VERSION="$( (command -v c3c >/dev/null 2>&1 && c3c --version || "$HOME/src/c3/c3c" --version) 2>/dev/null | head -1 || echo ABSENT)" \
   ODIN_VERSION="$( (command -v odin >/dev/null 2>&1 && odin version || "$HOME/src/odin/odin" version) 2>/dev/null | head -1 || echo ABSENT)" \
   MOJO_VERSION="$(mojo_ok && ("$PIXI" run --manifest-path "$MOJO_MANIFEST" mojo --version 2>/dev/null | head -1 || echo "mojo (version unknown)") || echo ABSENT)" \
+  BEND_VERSION="$(bend_ok && (BEND_NO_TELEMETRY=1 "$BEND" --version 2>/dev/null | tr -d '\033' | sed 's/\[[0-9;]*m//g' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^/bend /' || echo "bend (version unknown)") || echo ABSENT)" \
   python3 - <<'PYEOF'
 import json, os
 
@@ -208,6 +230,8 @@ out = {
             "c3": "c3c compile -O5",
             "odin": "odin build -o:speed",
             "mojo": "mojo build (default -O3)",
+            "bend": "bend build → native via clang (BendRT)",
+            "bend-par": "bend build → native via clang — parallel-fork variant",
         },
     },
     "toolchains": {
@@ -220,6 +244,8 @@ out = {
         "c3": os.environ["C3C_VERSION"],
         "odin": os.environ["ODIN_VERSION"],
         "mojo": os.environ["MOJO_VERSION"],
+        "bend": os.environ["BEND_VERSION"],
+        "bend-par": os.environ["BEND_VERSION"],
     },
     "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
     "langs": langs_seen,
