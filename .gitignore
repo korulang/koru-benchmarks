@@ -37,3 +37,9 @@ suites/json-parse/contenders/fparsec/bin/
 suites/json-parse/contenders/fparsec/obj/
 suites/json-parse/contenders/megaparsec/json_megaparsec
 .claude/worktrees/
+
+# iteration-models — dotnet build artifacts (sources are tracked)
+suites/iteration-models/csharp/*/bin/
+suites/iteration-models/csharp/*/obj/
+suites/iteration-models/fsharp/*/bin/
+suites/iteration-models/fsharp/*/obj/
