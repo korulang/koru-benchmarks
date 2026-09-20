@@ -37,8 +37,13 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # -- layer 1: build + correctness, both sides, before any clock --
 mkdir -p "$TMP/k"; cp "$KDIR/$NAME.k" "$TMP/k/"
 # koruc clobbers its CWD — always build in the tmp dir.
-( cd "$TMP/k" && "$KORUC" build "$NAME.k" >compile.log 2>&1 ) && [ -x "$TMP/k/a.out" ] \
+( cd "$TMP/k" && "$KORUC" build --release=fast "$NAME.k" >compile.log 2>&1 ) && [ -x "$TMP/k/a.out" ] \
   || { echo "koru build FAILED:"; grep -m1 -E 'error\[' "$TMP/k/compile.log" || tail -2 "$TMP/k/compile.log"; exit 1; } >&2
+# --release=fast is load-bearing: koruc defaults to Debug, and a Debug
+# binary against cc -O2 measures the safety checks, not the codegen. The
+# build log must name the mode — refuse to time anything else.
+grep -q '(ReleaseFast)' "$TMP/k/compile.log" \
+  || { echo "koruc did not report ReleaseFast — refusing to time:" >&2; cat "$TMP/k/compile.log" >&2; exit 1; }
 cc -O2 -o "$TMP/ref" "$CDIR/$NAME.c" || { echo "C reference build FAILED" >&2; exit 1; }
 for side in "koru:$TMP/k/a.out" "c:$TMP/ref"; do
   got="$("${side#*:}" </dev/null 2>/dev/null | tr -d '[:space:]')"
