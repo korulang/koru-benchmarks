@@ -1,15 +1,15 @@
 {
   "suite": "ecs-store",
   "kind": "koru-inprocess",
-  "generated_at": "2026-08-25T03:18:18Z",
+  "generated_at": "2026-09-20T09:34:08Z",
   "machine": {
     "os": "Darwin",
     "arch": "arm64",
     "cpu": "Apple M2 Pro",
-    "load_avg": "16.24 22.27 13.32"
+    "load_avg": "4.58 5.62 6.67"
   },
   "koru": {
-    "commit": "67ccc78f"
+    "commit": "582243aa2"
   },
   "protocol": {
     "instrument": "in-process std/time (std.time.nanoTimestamp) around the timed passes; per-iter ns = total_ns / timed_iters; median across process runs, interleaved across ports (run 1 of each, run 2 of each, ...)",
@@ -20,34 +20,30 @@
     "category_boundary": "fragmented_iter and add_remove_component measure a DIFFERENT OPERATION than the reference engines: no archetypes exist, so iteration is 26 independent queries and add/remove is a presence-column write, not a row migration. These entries are never comparative claims; see MODEL.md."
   },
   "results": {
-    "fragmented_iter": {
-      "status": "blocked",
-      "diagnostic": "  there is no compiler diagnostic to fix here."
-    },
     "add_remove_component_i32": {
       "status": "measured",
-      "median_ns_per_iter": 972,
-      "min_ns_per_iter": 846,
+      "median_ns_per_iter": 977,
+      "min_ns_per_iter": 945,
       "runs_ns_per_iter": [
-        846,
-        979,
-        972,
-        928,
-        1009
+        1026,
+        945,
+        977,
+        1122,
+        977
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "add_remove_component": {
       "status": "measured",
-      "median_ns_per_iter": 1814,
-      "min_ns_per_iter": 1666,
+      "median_ns_per_iter": 1649,
+      "min_ns_per_iter": 1361,
       "runs_ns_per_iter": [
-        1755,
-        1912,
-        1859,
-        1814,
-        1666
+        1631,
+        1649,
+        1676,
+        1839,
+        1361
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
@@ -57,291 +53,305 @@
       "median_ns_per_iter": 102,
       "min_ns_per_iter": 100,
       "runs_ns_per_iter": [
-        219,
-        102,
-        101,
-        110,
-        100
+        306,
+        100,
+        100,
+        109,
+        102
+      ],
+      "timed_iters_per_run": 900,
+      "process_runs": 5
+    },
+    "fragmented_iter": {
+      "status": "measured",
+      "median_ns_per_iter": 128,
+      "min_ns_per_iter": 125,
+      "runs_ns_per_iter": [
+        168,
+        129,
+        128,
+        125,
+        128
       ],
       "timed_iters_per_run": 900,
       "process_runs": 5
     },
     "heavy_compute_f32": {
       "status": "measured",
-      "median_ns_per_iter": 553629,
-      "min_ns_per_iter": 540995,
+      "median_ns_per_iter": 550537,
+      "min_ns_per_iter": 542975,
       "runs_ns_per_iter": [
-        540995,
-        560545,
-        588787,
-        553629,
-        549287
+        550537,
+        549612,
+        552175,
+        551416,
+        542975
       ],
       "timed_iters_per_run": 10,
       "process_runs": 5
     },
     "heavy_compute": {
       "status": "measured",
-      "median_ns_per_iter": 1082825,
-      "min_ns_per_iter": 1062970,
+      "median_ns_per_iter": 1058579,
+      "min_ns_per_iter": 1046829,
       "runs_ns_per_iter": [
-        1087300,
-        1062970,
-        1082825,
-        1075341,
-        1105920
+        1046829,
+        1058579,
+        1063191,
+        1051020,
+        1076750
       ],
       "timed_iters_per_run": 10,
       "process_runs": 5
     },
     "rf_fused_1": {
       "status": "measured",
-      "median_ns_per_iter": 2222,
-      "min_ns_per_iter": 2132,
+      "median_ns_per_iter": 2235,
+      "min_ns_per_iter": 2123,
       "runs_ns_per_iter": [
-        2222,
-        2132,
-        2231,
-        2403,
-        2214
+        2185,
+        2509,
+        2235,
+        2123,
+        2331
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_fused_2": {
       "status": "measured",
-      "median_ns_per_iter": 3439,
-      "min_ns_per_iter": 3387,
+      "median_ns_per_iter": 3501,
+      "min_ns_per_iter": 3433,
       "runs_ns_per_iter": [
-        3387,
-        3599,
-        3461,
-        3439,
-        3434
+        3501,
+        3523,
+        3526,
+        3454,
+        3433
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_fused_4": {
       "status": "measured",
-      "median_ns_per_iter": 6274,
-      "min_ns_per_iter": 6204,
+      "median_ns_per_iter": 6301,
+      "min_ns_per_iter": 6160,
       "runs_ns_per_iter": [
-        6274,
-        6249,
-        6341,
-        6204,
-        6328
+        6184,
+        6301,
+        6415,
+        6160,
+        6754
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_fused_8": {
       "status": "measured",
-      "median_ns_per_iter": 12642,
-      "min_ns_per_iter": 12474,
+      "median_ns_per_iter": 12428,
+      "min_ns_per_iter": 12238,
       "runs_ns_per_iter": [
-        12474,
-        12886,
-        12536,
-        12679,
-        12642
+        12238,
+        13179,
+        12428,
+        12433,
+        12372
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_stripe_1": {
       "status": "measured",
-      "median_ns_per_iter": 2168,
-      "min_ns_per_iter": 2126,
+      "median_ns_per_iter": 2214,
+      "min_ns_per_iter": 2140,
       "runs_ns_per_iter": [
-        2126,
-        2168,
-        2171,
-        2163,
-        2187
+        2216,
+        2215,
+        2140,
+        2214,
+        2200
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_stripe_2": {
       "status": "measured",
-      "median_ns_per_iter": 4365,
-      "min_ns_per_iter": 4313,
+      "median_ns_per_iter": 4411,
+      "min_ns_per_iter": 4386,
       "runs_ns_per_iter": [
-        4313,
-        4364,
-        4365,
-        5903,
-        5027
+        4411,
+        4472,
+        4391,
+        4386,
+        4529
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_stripe_4": {
       "status": "measured",
-      "median_ns_per_iter": 8874,
-      "min_ns_per_iter": 8821,
+      "median_ns_per_iter": 9078,
+      "min_ns_per_iter": 8777,
       "runs_ns_per_iter": [
-        8821,
-        9236,
-        10825,
-        8863,
-        8874
+        9009,
+        10666,
+        9186,
+        9078,
+        8777
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_stripe_8": {
       "status": "measured",
-      "median_ns_per_iter": 18130,
-      "min_ns_per_iter": 18091,
+      "median_ns_per_iter": 18675,
+      "min_ns_per_iter": 17749,
       "runs_ns_per_iter": [
-        18091,
-        18400,
-        18145,
-        18130,
-        18109
+        18984,
+        18675,
+        18925,
+        17749,
+        18050
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_sweeps_1": {
       "status": "measured",
-      "median_ns_per_iter": 2154,
-      "min_ns_per_iter": 2126,
+      "median_ns_per_iter": 2199,
+      "min_ns_per_iter": 2119,
       "runs_ns_per_iter": [
-        2209,
-        2154,
-        2126,
-        2206,
-        2129
+        2119,
+        2199,
+        2253,
+        2193,
+        2523
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_sweeps_2": {
       "status": "measured",
-      "median_ns_per_iter": 4757,
-      "min_ns_per_iter": 4576,
+      "median_ns_per_iter": 4683,
+      "min_ns_per_iter": 4631,
       "runs_ns_per_iter": [
-        4757,
-        4679,
-        6800,
-        9385,
-        4576
+        4634,
+        4631,
+        5563,
+        4683,
+        4870
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_sweeps_4": {
       "status": "measured",
-      "median_ns_per_iter": 9495,
-      "min_ns_per_iter": 9287,
+      "median_ns_per_iter": 9403,
+      "min_ns_per_iter": 9382,
       "runs_ns_per_iter": [
-        10450,
-        9376,
-        9495,
-        9287,
-        9618
+        9403,
+        9382,
+        9388,
+        9407,
+        9662
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "rf_sweeps_8": {
       "status": "measured",
-      "median_ns_per_iter": 20223,
-      "min_ns_per_iter": 19005,
+      "median_ns_per_iter": 22354,
+      "min_ns_per_iter": 19057,
       "runs_ns_per_iter": [
-        19227,
-        22655,
-        20223,
-        19005,
-        21037
+        19057,
+        22594,
+        20756,
+        22354,
+        22818
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "simple_insert_f32": {
       "status": "measured",
-      "median_ns_per_iter": 139274,
-      "min_ns_per_iter": 125491,
+      "median_ns_per_iter": 144166,
+      "min_ns_per_iter": 136500,
       "runs_ns_per_iter": [
-        149349,
-        147833,
-        139274,
-        126075,
-        125491
+        140133,
+        136500,
+        154600,
+        156950,
+        144166
       ],
       "timed_iters_per_run": 5,
       "process_runs": 5
     },
     "simple_insert": {
       "status": "measured",
-      "median_ns_per_iter": 204383,
-      "min_ns_per_iter": 194741,
+      "median_ns_per_iter": 232800,
+      "min_ns_per_iter": 220325,
       "runs_ns_per_iter": [
-        204383,
-        194741,
-        224558,
-        215183,
-        200625
+        220325,
+        237866,
+        232800,
+        221683,
+        251591
       ],
       "timed_iters_per_run": 5,
       "process_runs": 5
     },
     "simple_iter_1col_f32": {
       "status": "measured",
-      "median_ns_per_iter": 805,
-      "min_ns_per_iter": 787,
+      "median_ns_per_iter": 831,
+      "min_ns_per_iter": 812,
       "runs_ns_per_iter": [
-        816,
-        805,
-        787,
-        855,
-        801
+        828,
+        812,
+        831,
+        835,
+        832
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "simple_iter_1col": {
       "status": "measured",
-      "median_ns_per_iter": 2206,
-      "min_ns_per_iter": 2179,
+      "median_ns_per_iter": 2183,
+      "min_ns_per_iter": 2171,
       "runs_ns_per_iter": [
-        2179,
-        2206,
-        2200,
-        2206,
-        2209
+        2216,
+        2171,
+        2182,
+        2183,
+        2241
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "simple_iter_f32": {
       "status": "measured",
-      "median_ns_per_iter": 4368,
-      "min_ns_per_iter": 4318,
+      "median_ns_per_iter": 4365,
+      "min_ns_per_iter": 4301,
       "runs_ns_per_iter": [
-        4388,
-        4318,
-        4348,
-        4377,
-        4368
+        4376,
+        4393,
+        4301,
+        4365,
+        4330
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
     },
     "simple_iter": {
       "status": "measured",
-      "median_ns_per_iter": 6521,
-      "min_ns_per_iter": 6377,
+      "median_ns_per_iter": 6455,
+      "min_ns_per_iter": 6289,
       "runs_ns_per_iter": [
-        6509,
-        7019,
-        6544,
-        6377,
-        6521
+        6455,
+        6289,
+        6355,
+        6456,
+        6506
       ],
       "timed_iters_per_run": 1000,
       "process_runs": 5
