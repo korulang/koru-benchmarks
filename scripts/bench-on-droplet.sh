@@ -66,10 +66,17 @@ ID="$(doctl compute droplet create "$NAME" \
         --ssh-keys "$SSH_KEY_ID" --wait --no-header --format ID)"
 trap '[ "${KEEP:-0}" = 1 ] || { echo "▶ destroying droplet $ID"; doctl compute droplet delete "$ID" -f; }' EXIT
 
-IP="$(doctl compute droplet get "$ID" --no-header --format PublicIPv4)"
-echo "▶ droplet $ID at $IP — waiting for SSH (marketplace cloud-init can take minutes) …"
+# --wait means the VM is active, not that networking is wired — PublicIPv4 can
+# still be empty. Poll it inside the SSH loop so a slow DHCP doesn't sink us.
+echo "▶ droplet $ID — waiting for IP + SSH (marketplace cloud-init can take minutes) …"
 ok=0
+IP=""
 for i in $(seq 1 60); do
+  if [ -z "$IP" ]; then
+    IP="$(doctl compute droplet get "$ID" --no-header --format PublicIPv4 2>/dev/null | tr -d '[:space:]')"
+    [ -z "$IP" ] && { sleep 5; continue; }
+    echo "▶ droplet $ID at $IP"
+  fi
   if $SSH -o ConnectTimeout=8 -o BatchMode=yes "root@$IP" true 2>/dev/null; then ok=1; break; fi
   sleep 5
 done
