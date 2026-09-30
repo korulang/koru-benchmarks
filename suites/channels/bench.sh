@@ -26,8 +26,8 @@ command -v hyperfine >/dev/null 2>&1 || { echo "hyperfine not installed." >&2; e
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 have() { command -v "$1" >/dev/null 2>&1; }
 
-printf '%-16s %10s %10s %10s\n' kernel koru go go1t
-printf '%-16s %10s %10s %10s\n' "------" "----" "--" "----"
+printf '%-16s %10s %10s %10s %10s\n' kernel koru zig-ring go go1t
+printf '%-16s %10s %10s %10s %10s\n' "------" "----" "--------" "--" "----"
 
 for casedir in "$SUITE"/reference/cases/*/; do
   name="$(basename "$casedir")"
@@ -43,6 +43,21 @@ for casedir in "$SUITE"/reference/cases/*/; do
       out="$(cd "$w" && timeout 120 ./a.out 2>/dev/null)"
       if [ "$out" = "$expected" ]; then
         cmds+=("$w/a.out")
+      else
+        cmds+=("echo WRONG-ANSWER")
+      fi
+    else
+      cmds+=("echo BUILD-FAIL")
+    fi
+  fi
+
+  # zig-ring — the same-substrate control: SAME MpmcRing, same schedule
+  if have zig && [ -f "$casedir/$name.zig" ]; then
+    ( cd "$TMP" && zig build-exe -OReleaseFast "$casedir/$name.zig" -femit-bin="zig_$name" >/dev/null 2>&1 )
+    if [ -x "$TMP/zig_$name" ]; then
+      out="$(timeout 120 "$TMP/zig_$name" 2>/dev/null)"
+      if [ "$out" = "$expected" ]; then
+        cmds+=("$TMP/zig_$name")
       else
         cmds+=("echo WRONG-ANSWER")
       fi
@@ -79,5 +94,5 @@ for casedir in "$SUITE"/reference/cases/*/; do
           && awk '/"mean"/ {gsub(/[^0-9.]/,"",$2); printf "%.1f", $2*1000; exit}' "$TMP/hf.json")"
     cells+=("${ms:-ERR}")
   done
-  printf '%-16s %10s %10s %10s\n' "$name" "${cells[0]:--}" "${cells[1]:--}" "${cells[2]:--}"
+  printf '%-16s %10s %10s %10s %10s\n' "$name" "${cells[0]:--}" "${cells[1]:--}" "${cells[2]:--}" "${cells[3]:--}"
 done

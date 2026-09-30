@@ -17,6 +17,13 @@ goroutines parked and woken by the runtime, spread across OS threads.
 The `go1t` row re-runs the same binary under `GOMAXPROCS=1` — the honest
 control that isolates channel machinery from thread scheduling.
 
+The `zig-ring` row is the same-substrate control: the SAME Vyukov
+`MpmcRing` `std/channel` emits, driven by the SAME pass schedule
+(producer batch-until-`full`, four one-dequeue consumers) in bare Zig —
+no pump, no transform. It answers the question "what does the channel
+machinery cost over the raw ring?" — and the measured answer on this
+machine is within noise (~5%).
+
 **This is not a claim of cross-thread parity.** Koru's spawned-producer
 edge (`699_030`) and the futex park/wake tier are unbuilt — a producer on
 another OS thread cannot yet send into these channels. What the numbers
