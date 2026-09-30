@@ -26,8 +26,8 @@ command -v hyperfine >/dev/null 2>&1 || { echo "hyperfine not installed." >&2; e
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 have() { command -v "$1" >/dev/null 2>&1; }
 
-printf '%-16s %10s %10s %10s %10s\n' kernel koru zig-ring go go1t
-printf '%-16s %10s %10s %10s %10s\n' "------" "----" "--------" "--" "----"
+printf '%-16s %10s %10s %10s %10s %10s %10s\n' kernel koru zig-ring crossbeam go go1t gonb
+printf '%-16s %10s %10s %10s %10s %10s %10s\n' "------" "----" "--------" "---------" "--" "----" "----"
 
 for casedir in "$SUITE"/reference/cases/*/; do
   name="$(basename "$casedir")"
@@ -66,6 +66,22 @@ for casedir in "$SUITE"/reference/cases/*/; do
     fi
   fi
 
+  # crossbeam — the semantic peer: bounded MPMC, try_send/try_recv, one thread
+  if have cargo && [ -f "$casedir/crossbeam/Cargo.toml" ]; then
+    ( cd "$casedir/crossbeam" && cargo build --release --offline >/dev/null 2>&1 )
+    rsbin="$casedir/crossbeam/target/release/$name"
+    if [ -x "$rsbin" ]; then
+      out="$(timeout 120 "$rsbin")"
+      if [ "$out" = "$expected" ]; then
+        cmds+=("$rsbin")
+      else
+        cmds+=("echo WRONG-ANSWER")
+      fi
+    else
+      cmds+=("echo BUILD-FAIL")
+    fi
+  fi
+
   # go — build, verify, time; and again pinned to one thread
   if have go && [ -f "$casedir/$name.go" ]; then
     ( cd "$TMP" && go build -o "go_$name" "$casedir/$name.go" 2>/dev/null )
@@ -82,6 +98,21 @@ for casedir in "$SUITE"/reference/cases/*/; do
     fi
   fi
 
+  # gonb — same Go channel, non-blocking select/default, one goroutine
+  if have go && [ -f "$casedir/${name}_nb.go" ]; then
+    ( cd "$TMP" && go build -o "gonb_$name" "$casedir/${name}_nb.go" 2>/dev/null )
+    if [ -x "$TMP/gonb_$name" ]; then
+      out="$(timeout 120 "$TMP/gonb_$name")"
+      if [ "$out" = "$expected" ]; then
+        cmds+=("$TMP/gonb_$name")
+      else
+        cmds+=("echo WRONG-ANSWER")
+      fi
+    else
+      cmds+=("echo BUILD-FAIL")
+    fi
+  fi
+
   # pad/absent handling: run hyperfine for whichever binaries we got
   cells=()
   for c in "${cmds[@]:-}"; do
@@ -94,5 +125,5 @@ for casedir in "$SUITE"/reference/cases/*/; do
           && awk '/"mean"/ {gsub(/[^0-9.]/,"",$2); printf "%.1f", $2*1000; exit}' "$TMP/hf.json")"
     cells+=("${ms:-ERR}")
   done
-  printf '%-16s %10s %10s %10s %10s\n' "$name" "${cells[0]:--}" "${cells[1]:--}" "${cells[2]:--}" "${cells[3]:--}"
+  printf '%-16s %10s %10s %10s %10s %10s %10s\n' "$name" "${cells[0]:--}" "${cells[1]:--}" "${cells[2]:--}" "${cells[3]:--}" "${cells[4]:--}" "${cells[5]:--}"
 done

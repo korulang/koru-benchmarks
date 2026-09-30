@@ -20,9 +20,21 @@ control that isolates channel machinery from thread scheduling.
 The `zig-ring` row is the same-substrate control: the SAME Vyukov
 `MpmcRing` `std/channel` emits, driven by the SAME pass schedule
 (producer batch-until-`full`, four one-dequeue consumers) in bare Zig —
-no pump, no transform. It answers the question "what does the channel
-machinery cost over the raw ring?" — and the measured answer on this
-machine is within noise (~5%).
+no pump, no transform. It answers "what does the channel machinery cost
+over the raw ring?" — ~9% on this machine, small but consistently real.
+
+The `crossbeam` row is the semantic peer: Rust's `crossbeam-channel`
+`bounded(1024)` driven with `try_send`/`try_recv` on one thread — the
+same non-blocking contract (`| full` / `| none` spelled as
+`TrySendError::Full` / `TryRecvError::Empty`), the same array-queue
+family, the same pass schedule. It answers "how does this channel
+compare to an implementation of the SAME contract?"
+
+The `gonb` row is Go's channel with its scheduler subtracted: try-send
+and try-recv via `select`/`default` in a single goroutine, same pass
+schedule. It answers "is Go's cost the scheduler or the channel?" —
+measured here, it is almost entirely the channel's mutex'd queue: `gonb`
+lands within noise of `go1t`.
 
 **This is not a claim of cross-thread parity.** Koru's spawned-producer
 edge (`699_030`) and the futex park/wake tier are unbuilt — a producer on

@@ -43,3 +43,6 @@ suites/iteration-models/csharp/*/bin/
 suites/iteration-models/csharp/*/obj/
 suites/iteration-models/fsharp/*/bin/
 suites/iteration-models/fsharp/*/obj/
+
+# channels — crossbeam reference build artifacts (sources are tracked)
+suites/channels/reference/cases/*/crossbeam/target/
