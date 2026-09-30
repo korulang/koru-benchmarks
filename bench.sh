@@ -26,6 +26,10 @@ STDIN0="$TMP/mode0"; printf '0\n' > "$STDIN0"   # Osprey feeds a constant seed l
 ROWS="$TMP/rows.tsv"; : > "$ROWS"               # kernel<TAB>lang<TAB>status<TAB>mean_ms<TAB>stddev_ms — feeds results/latest.json
 
 have() { command -v "$1" >/dev/null 2>&1; }
+# A real GCC, not Apple's clang answering to the name "gcc" — the column is
+# labeled gcc, so on a machine where `gcc` is clang the honest answer is ABSENT.
+gcc_ok() { have gcc && ! gcc --version 2>/dev/null | grep -qi clang; }
+clang_ok() { have clang && clang --version 2>/dev/null | grep -qi clang; }
 # Prefer an explicit OSPREY, then a sibling checkout (same convention as koruc),
 # then PATH. Homebrew's bottle currently ships a binary that cannot link the
 # C runtime outside the formula's layout — sibling `make build` is the honest path.
@@ -53,8 +57,9 @@ fi
 bend_ok() { [ -n "$BEND" ] && [ -x "$BEND" ]; }
 
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
-  "$(have cc && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
+printf 'Toolchains: koru=present  c=%s  cgcc3=%s  cclang=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
+  "$(have cc && echo present || echo ABSENT)" "$(gcc_ok && echo present || echo ABSENT)" \
+  "$(clang_ok && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
   "$(have rustc && echo present || echo ABSENT)" "$(have ghc && echo present || echo ABSENT)" \
   "$(have ocamlopt && echo present || echo ABSENT)" "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
   "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
@@ -75,6 +80,10 @@ build_lang() {
       local w="$TMP/kf_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
+    # Max-opt columns matching koruc ReleaseFast / rustc opt-level=3 —
+    # all at baseline ISA (no -march=native) to match what the rest emit.
+    cgcc3)   gcc_ok      && [ -f "$cdir/$name.c" ]  && gcc -O3 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
+    cclang)  clang_ok    && [ -f "$cdir/$name.c" ]  && clang -O3 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     cmap)     [ -f "$cdir/$name.map.c" ] && cc -O2 -o "$out" "$cdir/$name.map.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
     haskell) have ghc    && [ -f "$cdir/$name.hs" ] && ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$cdir/$name.hs" >/dev/null 2>&1 ;;
@@ -107,9 +116,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru koru-fold c cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
+LANGS=(koru koru-fold c cgcc3 cclang cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f c gcc3 clang cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
 
 # The board is driven by reference/cases (the complete 22-kernel list), not by
 # the koru/ ports — a kernel Koru can't express yet must still show its row so
@@ -148,8 +157,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
       printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
   unset ms
 done
 
@@ -181,6 +190,8 @@ if [ -z "$FILTER" ]; then
   LOADAVG="$loadavg" NCPU="$ncpu" \
   KORU_COMMIT="$koru_commit" KORU_DIRTY="$koru_dirty" WARMUP="$WARMUP" MINRUNS="$MINRUNS" \
   CC_VERSION="$(cc --version 2>/dev/null | head -1 || echo ABSENT)" \
+  GCC_VERSION="$(gcc_ok && gcc --version 2>/dev/null | head -1 || echo ABSENT)" \
+  CLANG_VERSION="$(clang_ok && clang --version 2>/dev/null | head -1 || echo ABSENT)" \
   RUSTC_VERSION="$(rustc --version 2>/dev/null || echo ABSENT)" \
   GHC_VERSION="$(ghc --numeric-version 2>/dev/null | sed 's/^/ghc /' || echo ABSENT)" \
   OCAML_VERSION="$(ocamlopt -version 2>/dev/null | sed 's/^/ocamlopt /' || echo ABSENT)" \
@@ -222,6 +233,8 @@ out = {
             "koru": "koruc build (ReleaseFast)",
             "koru-fold": "koruc build (ReleaseFast) — flat fold/identity port",
             "c": "cc -O2",
+            "cgcc3": "gcc -O3 (real GCC only — ABSENT when gcc is clang)",
+            "cclang": "clang -O3",
             "rust": "rustc -C opt-level=3 -C overflow-checks=off",
             "haskell": "ghc -O2",
             "ocaml": "ocamlopt -O3 -unsafe",
@@ -236,6 +249,8 @@ out = {
     },
     "toolchains": {
         "c": os.environ["CC_VERSION"],
+        "cgcc3": os.environ["GCC_VERSION"],
+        "cclang": os.environ["CLANG_VERSION"],
         "rust": os.environ["RUSTC_VERSION"],
         "haskell": os.environ["GHC_VERSION"],
         "ocaml": os.environ["OCAML_VERSION"],
