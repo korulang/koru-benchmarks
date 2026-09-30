@@ -42,7 +42,15 @@ another OS thread cannot yet send into these channels. What the numbers
 show is the shape the language actually ships today: the same program
 topology, the same ring, zero parking — measured, not asserted.
 
-## Protocol
+## The custodial kernel
+
+`chan_custody` runs the same workload with an obligation as the payload:
+every value in flight is `Src<live!>` — minted by `mk`, custody consumed
+at the send's `| ok`, retained and settled by the producer on `| full` /
+`| closed`, minted fresh at the winning `!` arm, discharged by `dispose`.
+A consumer that dropped `v` would fail compile (KORU030). On this machine
+it lands identical to the plain-i64 row — the obligation ledger is a
+compile-time artifact and costs nothing in the emitted binary.
 
 `./run.sh` (repo root) builds each `koru/<name>/*.k` through `koruc` and
 checks stdout against `expected.txt`. `./bench.sh` (this directory) does

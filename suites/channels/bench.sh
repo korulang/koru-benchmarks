@@ -35,6 +35,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
   expected="$(cat "$casedir/expected.txt" 2>/dev/null || true)"
   declare -a cmds=()
 
+  # Every column appends exactly one entry — a binary path or `echo -`
+  # for absent/missing — so cells stay aligned under their headers.
   # koru — build through koruc, verify output, time
   kdir="$SUITE/koru/$name"
   if [ -f "$kdir/$name.k" ]; then
@@ -49,6 +51,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
     else
       cmds+=("echo BUILD-FAIL")
     fi
+  else
+    cmds+=("echo -")
   fi
 
   # zig-ring — the same-substrate control: SAME MpmcRing, same schedule
@@ -64,6 +68,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
     else
       cmds+=("echo BUILD-FAIL")
     fi
+  else
+    cmds+=("echo -")
   fi
 
   # crossbeam — the semantic peer: bounded MPMC, try_send/try_recv, one thread
@@ -80,6 +86,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
     else
       cmds+=("echo BUILD-FAIL")
     fi
+  else
+    cmds+=("echo -")
   fi
 
   # go — build, verify, time; and again pinned to one thread
@@ -96,6 +104,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
     else
       cmds+=("echo BUILD-FAIL" "echo -")
     fi
+  else
+    cmds+=("echo -" "echo -")
   fi
 
   # gonb — same Go channel, non-blocking select/default, one goroutine
@@ -111,6 +121,8 @@ for casedir in "$SUITE"/reference/cases/*/; do
     else
       cmds+=("echo BUILD-FAIL")
     fi
+  else
+    cmds+=("echo -")
   fi
 
   # pad/absent handling: run hyperfine for whichever binaries we got
