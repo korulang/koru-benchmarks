@@ -1,0 +1,4 @@
+{
+  "name": "chan_throughput",
+  "description": "1M messages through a cap-1024 channel, 4 competing consumers — same topology in Koru (pump participants, one thread) and Go (goroutines)"
+}
