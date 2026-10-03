@@ -1,0 +1,225 @@
+{
+ "suite": "prime-sieve-drag-race-revisit",
+ "claim": "korulang.org/blog/a-35-line-prime-sieve-beats-rust (49604 vs 49374 passes/5s, Xeon 8358, 2026-07-01)",
+ "generated_at": "2026-10-03",
+ "machines": [
+  {
+   "id": "605726306",
+   "cpu": "Intel Xeon Platinum 8280 (Cascade Lake)",
+   "size": "c-2 lon1",
+   "note": "destroyed"
+  },
+  {
+   "id": "605757456",
+   "cpu": "Intel Xeon Platinum 8168 (Skylake-SP)",
+   "size": "c-2 lon1",
+   "note": "destroyed"
+  },
+  {
+   "id": "local",
+   "cpu": "Apple Silicon (ARM64)",
+   "note": "laptop, not comparable to droplets"
+  }
+ ],
+ "build_parity": "verified: era and HEAD stage-D both emit `zig build-exe <emitted> -lc -O ReleaseFast` (src/main.zig both eras); cross-build used same flags + -target x86_64-linux-gnu. musl-vs-gnu: +3%. -mcpu=cascadelake: +1%.",
+ "results": {
+  "cascade_lake_8280": {
+   "protocol": "n=8 interleaved, single-threaded, all binaries validate 78498",
+   "koru_then": {
+    "samples": [
+     33890,
+     33767,
+     33629,
+     33863,
+     33538,
+     33740,
+     33869,
+     33884
+    ],
+    "mean": 33772
+   },
+   "koru_head": {
+    "samples": [
+     33555,
+     33575,
+     34518,
+     33210,
+     33596,
+     33570,
+     33567,
+     33395
+    ],
+    "mean": 33623
+   },
+   "rust_extreme_t1": {
+    "samples": [
+     42785,
+     42508,
+     42734,
+     41956,
+     42606,
+     42926,
+     42769,
+     42932
+    ],
+    "mean": 42652
+   },
+   "verdict": "rust +26.5%; koru head==era (parity)"
+  },
+  "skylake_8168": {
+   "protocol": "n=8 interleaved, single-threaded",
+   "koru_then": {
+    "mean": 37243
+   },
+   "koru_head": {
+    "mean": 36914
+   },
+   "koru_dense512": {
+    "mean": 30084,
+    "verdict": "-19% regression \u2014 REJECTED"
+   },
+   "koru_prefetch": {
+    "mean": 32110,
+    "verdict": "-14% regression \u2014 REJECTED"
+   },
+   "rust_extreme_t1": {
+    "mean": 39434
+   },
+   "verdict": "rust +6%; koru head==era"
+  },
+  "arm_local": {
+   "koru_then": {
+    "samples": [
+     86509,
+     85138,
+     86693
+    ],
+    "mean": 86113
+   },
+   "koru_head_baseline": {
+    "mean": 86400
+   },
+   "koru_dense512": {
+    "mean": 57100,
+    "verdict": "-34% regression \u2014 REJECTED"
+   },
+   "koru_prefetch": {
+    "mean": 78100,
+    "verdict": "-10% regression \u2014 REJECTED"
+   },
+   "rust_extreme_t1": {
+    "samples": [
+     77602
+    ],
+    "mean": 77602
+   },
+   "verdict": "koru +11% over rust; koru head==era"
+  }
+ },
+ "assembly_findings": {
+  "sparse_loop": "koru __mm_sp_*: 8x orb + 2 adds + cmp = 12 instr/iter. rust reset_sparse: 8x orb + 8 ptr-adds + cmp = 21 instr/iter. Koru's is TIGHTER.",
+  "dense_loop": "instruction-identical SSE vectorized RMW (movups/orps/movups pairs + scalar or) both sides",
+  "structure": "same algorithm: dense unrolled word-mask sweep for strides <~129, 8-way byte-scatter for larger, both start marking at p^2",
+  "perf_profile_clx": "koru 63% of cycles in 4 sparse fns; IPC 1.05 vs rust 1.58; L1-misses 129k/pass vs 98k; instructions/pass 533k vs ~675k",
+  "conclusion": "no codegen deficit found \u2014 koru emits fewer, tighter instructions for identical work"
+ },
+ "rejected_levers": [
+  "DENSE_LIMIT 128->512: -19% SKL, -34% ARM. Full-field sweeps cost more than strided marks save on every silicon tried.",
+  "prefetch 2-groups-ahead in sparse loop: -14% SKL, -10% ARM. 8 extra instrs/iter outweigh latency cover."
+ ],
+ "final_verdict": {
+  "koru_vs_koru": "PARITY \u2014 era vs head within ~1% on all three machines. The July->Oct perf work neither helped nor hurt this workload.",
+  "koru_vs_rust": "SUPERSEDED by resolution: the x86 gap was compiler_rt memset; after the fix, parity on 8168/8280; ARM koru +11%",
+  "koru_variance": "koru per-pass cost spans 33.6k-86k across machines; rust spans 39.4k-77.6k. Koru's strided-marker profile is more microarch-sensitive.",
+  "claim_status": "the blog claim is hardware-dated \u2014 true on the measured CPU generation, not reproducible as a general statement"
+ },
+ "unmeasured": [
+  "Ice Lake re-run of the exact published claim (no c-2 draw landed an 8358 this session)",
+  "perf stall-reason counters (VM PMU limited: stalled-cycles-* unsupported)",
+  "rustc version effect: today's rust built with 1.99.0 vs published 1.96.1"
+ ],
+ "artifacts": "~/src/koru-benchmarks/results/droplet/2026-10-03_artifacts/ has the rust binary; koru x86 binaries in /tmp/sieve_*/ (scratch)",
+ "resolution": {
+  "root_cause": "std/field:new-heap zeroed via @memset, which links Zig compiler_rt's local memset (nm: 't memset') instead of glibc's; rust imports memset@GLIBC",
+  "fix": "koru 78ef909c2 \u2014 zero through libc bzero when link_libc",
+  "interleaved_n6": {
+   "xeon_8280_a": {
+    "before": 37555,
+    "fix": 39768,
+    "rust": 40156
+   },
+   "xeon_8280_b": {
+    "before": 36998,
+    "fix": 39372,
+    "rust": 39470
+   },
+   "xeon_8168": {
+    "before": 36769,
+    "fix": 39077,
+    "rust": 39130
+   }
+  },
+  "fix_vs_rust": "parity within 0.1-1%; koru won 3/18 interleaved rounds \u2014 not a win",
+  "isolation": "calloc ~= bzero ~= rust; malloc-once + compiler_rt memset ~= before; field alignment offsets 0..2048 flat",
+  "counters_8168_per_pass": {
+   "cycles": [
+    452900,
+    425800
+   ],
+   "l1d_load_miss": [
+    81600,
+    80800
+   ],
+   "sparse_cycles": [
+    265000,
+    263000
+   ],
+   "dense_cycles": [
+    175600,
+    157000
+   ],
+   "order": "[koru, rust]"
+  },
+  "corrections": [
+   "cascade_lake_8280 27% gap came from a single droplet; two fresh 8280s gave 6.5% before the fix",
+   "MLP/fill-buffer hypothesis false: L1 misses, fb_full, and sparse cycles are equal per pass",
+   "earlier L1-miss 129k vs 98k compared rust's 10s perf window to koru's 5s"
+  ],
+  "still_unmeasured": [
+   "Ice Lake 8358",
+   "mechanism by which compiler_rt memset slows the subsequent dense sweeps"
+  ]
+ },
+ "resolution_2_direction_alternation": {
+  "root_cause": "all ~170 marker sweeps per pass ran forward over a 62.5KB field; on 32KB L1D each sweep evicted the field before the next reuse \u2014 every line of every sweep came from L2",
+  "fix": "koru 2700a4366 \u2014 std/field markers take a direction; Field flips direction per mark when field bytes > runtime-queried L1D (sysconf glibc / sysctl Darwin; off when unknown); libc zeroing also for clear/on-stack",
+  "interleaved_n6_per_droplet": {
+   "xeon_8168_a": {
+    "koru": 46697,
+    "rust": 39152,
+    "lead": "+19.3%",
+    "rounds": "6/6"
+   },
+   "xeon_8280": {
+    "koru": 52039,
+    "rust": 43856,
+    "lead": "+18.7%",
+    "rounds": "6/6"
+   },
+   "xeon_8168_b": {
+    "koru": 46850,
+    "rust": 39330,
+    "lead": "+19.1%",
+    "rounds": "6/6"
+   }
+  },
+  "rounds_won": "18/18 across three droplets",
+  "arm_local": "85.9-86.8k \u2014 unchanged; 64KB L1D fits the field so alternation stays off; descending sweeps would cost 6-9% there",
+  "regression_pin": "tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/2113_prime_sieve_field_exceeds_l1d \u2014 250KB field, 283146 primes, exercises both directions",
+  "still_unmeasured": [
+   "Ice Lake 8358 \u2014 no c-2 draw landed it",
+   "why descending sweeps cost 6-9% on ARM even when inactive codepath"
+  ],
+  "portability_caveat": "alternating direction is ~20 lines; Rust could adopt it \u2014 the durable lead is that the fix lives in the stdlib transform, not in application code"
+ }
+}
