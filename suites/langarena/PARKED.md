@@ -1,8 +1,8 @@
 # Parked decisions — LangArena port sweep
 
 Non-blocking items discovered while porting. Batch these when convenient;
-none gate a port today. Last updated: after calculator_* commits (413ebbe),
-18/40 ports green.
+none gate a port today. Last updated: after maze_* commits (b0f515d),
+21/40 ports green.
 
 ## Toolchain / language
 
@@ -41,20 +41,33 @@ none gate a port today. Last updated: after calculator_* commits (413ebbe),
    failure, but only because we checksum). *Decision needed:* accept
    (column-scoped is the design) or revisit.
 
+7. **`|> if` is terminal in a tor-body chain.** A `|>` step following an
+   `if` step's arms is "stray continuation" (KORU010) — the chain cannot
+   resume at the if's level; continuations live inside the arms.
+   Sequential conditionals become call steps (wone/pushw/gdig/…).
+   Related to #5 — same produce/chain grammar corner.
+   *Decision needed:* document as designed or widen the grammar.
+
+8. **Store/grid field names collide with Zig keywords unguarded.**
+   `st.fn` emitted `__koru_store_st.fn` and failed at Zig-compile time
+   ("expected pointer dereference … found 'fn'"), not at a koruc
+   diagnostic. *Decision needed:* reserved-word check in koruc
+   (cheap teach-miss) or leave.
+
 ## Process / repo state
 
-7. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
+9. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
    (`a7ddcbcb3`) and the `std/array:sort` template fix (`0d05d6175`);
    `sweep-trusted-cursor` carries `c7442550a`. Neither is in `main`.
    Every port so far runs against the readfix compiler.
 
-8. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
-   Crystal computes `last/IM*max` — ulp-boundary draws can differ.
-   Verified identical on all 35000 calculator draws and all graph draws
-   (oracles match either way); must be re-verified for any new
-   draw-consuming task. If a task ever splits on it, the ports need
-   multiply-first order.
+10. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
+    Crystal computes `last/IM*max` — ulp-boundary draws can differ.
+    Verified identical on all 35000 calculator draws, all graph draws,
+    and all 15.6M maze shuffle draws (oracles match either way); must
+    be re-verified for any new draw-consuming task. If a task ever
+    splits on it, the ports need multiply-first order.
 
-9. **Suite runtime is Debug builds.** All numbers here are correctness
-   receipts, not performance. Before any LangArena submission/perf claim:
-   ReleaseFast builds, honest protocol, no mean-on-laptop numbers.
+11. **Suite runtime is Debug builds.** All numbers here are correctness
+    receipts, not performance. Before any LangArena submission/perf claim:
+    ReleaseFast builds, honest protocol, no mean-on-laptop numbers.
