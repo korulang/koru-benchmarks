@@ -1,8 +1,8 @@
 # Parked decisions — LangArena port sweep
 
 Non-blocking items discovered while porting. Batch these when convenient;
-none gate a port today. Last updated: after json_parse_dom landed,
-22/40 ports green.
+none gate a port today. Last updated: after etc_cache_simulation
+landed, 34/44 ports green.
 
 ## Toolchain / language
 
@@ -81,13 +81,26 @@ none gate a port today. Last updated: after json_parse_dom landed,
     *Decision needed:* a real grid→string surface (this is a toolchain
     feature, not a benchmark hack) or accept hand-rolled parsing.
 
+10b. **Top-level `tor = if` arms swallow a same-column `|>` tail chain.**
+    In `etc_cache_simulation`'s `ins`, steps written at the `| then`/
+    `| else` column after the arms emitted *inside the else arm* — the
+    then path fell through the `i64` function without producing (Zig
+    implicit-return error, not a koruc diagnostic). Only arm-ending
+    calls make a conditional terminal at top level. The arm-column
+    continuation rule (#7) does not extend past a top-level armed `if`
+    — that position has no "after the if." *Decision needed:* diagnose
+    "no continuation after a top-level `if`" or accept the helper-tor
+    pattern.
+
 ## Process / repo state
 
 11. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
    (`a7ddcbcb3`), the `std/array:sort` template fix (`0d05d6175`), and
    the KORU010 arm-column hint (`1e57df218` + `79118140b`);
    `sweep-trusted-cursor` carries `c7442550a`. Neither is in `main`.
-   Every port so far runs against the readfix compiler.
+   The suite gates through `run.sh` on main-repo koruc; kernels are
+   written to compile on main (the `-> grid[i].f` arm shape is avoided
+   via store hops until `a7ddcbcb3` lands).
 
 12. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
     Crystal computes `last/IM*max` — ulp-boundary draws can differ.
