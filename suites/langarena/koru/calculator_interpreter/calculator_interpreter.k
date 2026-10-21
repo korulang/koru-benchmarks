@@ -30,6 +30,17 @@ std/store:new(st) { last: 42[i64], tp: 0[i64], pos: 0[i64], cur: 0[i64], nc: 0[i
 pub tor nxt { max: f64 } -> i64
 nxt = std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }: _ -> @as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * max))
 
+pub tor ret0 { } -> i64
+ret0 = if(0 == 0)
+| then -> 0
+| else -> 0
+
+// idv — produce a computed value. Grid reads in a produce (`->`)
+// expression emit raw identifiers on main koruc (the readfix lowering
+// is parked); routing the expression through a call arg lowers it.
+pub tor idv { v: i64 } -> i64
+idv = ret0(): _ -> v
+
 // ---- text emission -------------------------------------------------------
 
 // dfill/dcopy — render decimal digits of x (x >= 0 always in this
@@ -280,12 +291,12 @@ vpr = if(vt[idx].u == 0)
 // evl — evaluate node n (nd fields: k 0=num 1=var 2=binop 3=assign)
 pub tor evl { n: i64 } -> i64
 evl = if(nd[n].k == 0)
-| then -> nd[n].a
+| then |> idv(v: nd[n].a): r -> r
 | else |> if(nd[n].k == 1)
     | then |> vh(i: nd[n].a, e: nd[n].a + nd[n].b, h: 5381): hh
         |> vpr(s: nd[n].a, l: nd[n].b, idx: @rem(hh, 131072)): sl
         |> if(vt[sl].u == 1)
-            | then -> vt[sl].v
+            | then |> idv(v: vt[sl].v): r -> r
             | else -> 0
     | else |> if(nd[n].k == 2)
         | then |> evl(n: nd[n].b): l

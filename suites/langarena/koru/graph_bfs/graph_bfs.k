@@ -39,6 +39,17 @@ std/store:new(st) { last: 42[i64], acc: 0[i64], qh: 0[i64], u: 0[i64] }
 pub tor nxt { max: f64 } -> i64
 nxt = std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }: _ -> @as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * max))
 
+pub tor ret0 { } -> i64
+ret0 = if(0 == 0)
+| then -> 0
+| else -> 0
+
+// idv — produce a computed value. Grid reads in a produce (`->`)
+// expression emit raw identifiers on main koruc (the readfix lowering
+// is parked); routing the expression through a call arg lowers it.
+pub tor idv { v: i64 } -> i64
+idv = ret0(): _ -> v
+
 // jwalk — a vertex's jump draws. mode 0 = count degrees, 1 = place edges.
 pub tor jwalk { v: i64, cnt: i64, mode: i64 } -> i64
 jwalk = if(cnt > 0)
@@ -75,7 +86,7 @@ pub tor walk { head: i64, k: i64 } -> i64
 walk = if(head < st.qh)
 | then |> if(k < off[qv[head].v].s + deg[qv[head].v].c)
     | then |> if(adj[k].t == 499999)
-        | then -> qv[head].d + 1
+        | then |> idv(v: qv[head].d + 1): r -> r
         | else |> if(vis[adj[k].t].f == 0)
             | then |> std/grid:stored { vis[adj[k].t].f: 1 }
                 |> std/grid:stored { qv[st.qh].v: adj[k].t }

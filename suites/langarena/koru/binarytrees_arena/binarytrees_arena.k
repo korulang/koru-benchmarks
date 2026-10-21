@@ -30,6 +30,17 @@ import std/store
 
 std/store:new(arena, capacity: 2097151) { item: i64, left: -1[i64], right: -1[i64] }
 
+pub tor ret0 { } -> i64
+ret0 = if(0 == 0)
+| then -> 0
+| else -> 0
+
+// idv — produce a computed value. Grid reads in a produce (`->`)
+// expression emit raw identifiers on main koruc (the readfix lowering
+// is parked); routing the expression through a call arg lowers it.
+pub tor idv { v: i64 } -> i64
+idv = ret0(): _ -> v
+
 pub tor build { item: i64, depth: i64 } -> i64
 build = std/store:insert(arena) { item, left: -1, right: -1 }
 | row h |> if(depth > 0)
@@ -41,8 +52,9 @@ build = std/store:insert(arena) { item, left: -1, right: -1 }
 pub tor tsum { h: i64 } -> i64
 tsum = if(arena[h].left >= 0)
 | then |> tsum(h: arena[h].left): ls
-    |> tsum(h: arena[h].right): rs -> arena[h].item + 1 + ls + rs
-| else -> arena[h].item + 1
+    |> tsum(h: arena[h].right): rs
+    |> idv(v: arena[h].item + 1 + ls + rs): r -> r
+| else |> idv(v: arena[h].item + 1): r -> r
 
 capture { acc: 0[i64] }
 ! as g |> for(0..36)

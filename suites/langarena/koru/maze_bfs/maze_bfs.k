@@ -45,6 +45,12 @@ ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
 
+// idv — produce a computed value. Grid reads in a produce (`->`)
+// expression emit raw identifiers on main koruc (the readfix lowering
+// is parked); routing the expression through a call arg lowers it.
+pub tor idv { v: i64 } -> i64
+idv = ret0(): _ -> v
+
 pub tor qpp { } -> i64
 qpp = std/store:stored { st.qn: st.qn + 1 }: _ -> 0
 
@@ -150,7 +156,7 @@ plen = if(cur >= 0)
 pub tor pback { cur: i64, k: i64 } -> i64
 pback = if(k > 0)
 | then |> pback(cur: pt[cur].p, k: k - 1): r -> r
-| else -> pt[cur].c
+| else |> idv(v: pt[cur].c): r -> r
 
 // bwalk — fused pop/scan state machine (tail-lowered). pid < 0 pops
 // the fifo; pid >= 0 scans neighbor slot k of record pid, in the
