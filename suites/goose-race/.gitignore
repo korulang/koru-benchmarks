@@ -1,0 +1,15 @@
+# koruc build artifacts — never commit
+**/a.out*
+**/.zig-cache/
+**/zig-out/
+**/output_emitted.*
+**/backend_output_emitted.*
+**/backend.zig
+**/build_backend.zig
+**/build.zig
+**/compiler_env.*
+**/program.ast.json
+**/koru_runtime
+# locally-built race binaries
+base64_koru
+bf_koru
