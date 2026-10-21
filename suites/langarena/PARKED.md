@@ -1,8 +1,8 @@
 # Parked decisions — LangArena port sweep
 
 Non-blocking items discovered while porting. Batch these when convenient;
-none gate a port today. Last updated: after maze_* commits (b0f515d),
-21/40 ports green.
+none gate a port today. Last updated: after json_parse_dom landed,
+22/40 ports green.
 
 ## Toolchain / language
 
@@ -41,16 +41,11 @@ none gate a port today. Last updated: after maze_* commits (b0f515d),
    failure, but only because we checksum). *Decision needed:* accept
    (column-scoped is the design) or revisit.
 
-7. **`|>` continuations are column-scoped; KORU010 doesn't say so.**
-   A step after an `if`'s arms must align with the `| then`/`| else`
-   column — probe: `|> if` at col 4, arms at col 8, continuation at
-   col 4 → "stray continuation"; same continuation at col 8 compiles
-   and runs (the if's continuation lives at the arm column, same
-   column-scoping family as `| done`, #6). Not a grammar gap — the
-   diagnostic just doesn't teach the fix. Sequential conditionals
-   still read better as call steps (wone/pushw/gdig/…).
-   *Decision needed:* improve KORU010's hint to name the arm-column
-   rule or leave as-is.
+7. **`|>` continuations are column-scoped** — RESOLVED. A step after
+   an `if`'s arms must align with the `| then`/`| else` column; KORU010
+   now names the arm column and the offending line (`1e57df218`, pins
+   `210_325`/`210_326`). See #9 for the remaining trap in the same
+   area.
 
 8. **Store/grid field names collide with Zig keywords unguarded.**
    `st.fn` emitted `__koru_store_st.fn` and failed at Zig-compile time
@@ -58,20 +53,40 @@ none gate a port today. Last updated: after maze_* commits (b0f515d),
    diagnostic. *Decision needed:* reserved-word check in koruc
    (cheap teach-miss) or leave.
 
+9. **A `|>` continuation after producing arms is silently dead code.**
+   `->` inside an arm lowers to an early `return` in the handler; a
+   continuation aligned at the arm column compiles cleanly but never
+   executes when every arm produces (`json_parse_dom`'s `link` lost its
+   `tl` write this way — verified in `output_emitted.zig`: the
+   continuation sits after two `return`s). Silent unreachable user code
+   is a diagnostic gap: koruc could refuse "continuation unreachable —
+   every arm produces" or teach "drop `->` from the arms to let the
+   chain continue." *Decision needed:* diagnostic, or accept.
+
+10. **Grid bytes can't reach a `string` param.** `std/json:parse` wants
+    `input: string`; there is no `.k` spelling that hands a grid's byte
+    column to it (`doc.b[0..n]` emits undeclared Zig, `std/string:append`
+    reallocs per call — 200K fragments is not a path). ParseDom works
+    around it with a hand-rolled parser over the `doc` grid — honest,
+    but it means `std/json:parse` is unexercised by the suite.
+    *Decision needed:* a real grid→string surface (this is a toolchain
+    feature, not a benchmark hack) or accept hand-rolled parsing.
+
 ## Process / repo state
 
-9. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
-   (`a7ddcbcb3`) and the `std/array:sort` template fix (`0d05d6175`);
+11. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
+   (`a7ddcbcb3`), the `std/array:sort` template fix (`0d05d6175`), and
+   the KORU010 arm-column hint (`1e57df218` + `79118140b`);
    `sweep-trusted-cursor` carries `c7442550a`. Neither is in `main`.
    Every port so far runs against the readfix compiler.
 
-10. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
+12. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
     Crystal computes `last/IM*max` — ulp-boundary draws can differ.
     Verified identical on all 35000 calculator draws, all graph draws,
-    and all 15.6M maze shuffle draws (oracles match either way); must
-    be re-verified for any new draw-consuming task. If a task ever
-    splits on it, the ports need multiply-first order.
+    all 15.6M maze shuffle draws, and all 150K json draws (oracles match
+    either way); must be re-verified for any new draw-consuming task.
+    If a task ever splits on it, the ports need multiply-first order.
 
-11. **Suite runtime is Debug builds.** All numbers here are correctness
+13. **Suite runtime is Debug builds.** All numbers here are correctness
     receipts, not performance. Before any LangArena submission/perf claim:
     ReleaseFast builds, honest protocol, no mean-on-laptop numbers.
