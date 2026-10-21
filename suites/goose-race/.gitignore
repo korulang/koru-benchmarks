@@ -12,4 +12,4 @@
 **/koru_runtime
 # locally-built race binaries
 base64_koru
-bf_koru
+bf_koru*

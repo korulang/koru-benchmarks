@@ -14,8 +14,10 @@
 //   while cell>0.
 // - The dispatch loop is a tail-recursive tor (self_loop lowered), same
 //   as the LangArena bf kernels.
-// - tape is a fixed 1M-cell i32 grid; the references grow by doubling —
-//   bench.b/mandel.b stay well inside (C grows cap to at most ~65k).
+// - tape is a 1M-cell i32 grid — BSS pages materialize only where programs
+//   write, same as the reference's doubling calloc. Between runs the tape
+//   re-zeroes only what the previous run touched: st.hwm tracks the
+//   rightmost cell reached, and the clear walks 0..hwm instead of 1M.
 
 import std/io
 import std/grid
@@ -31,7 +33,7 @@ std/grid:new(tape, size: 1048576) { v: 0[i32] }
 std/grid:new(src, size: 262144) { c: 0[u8] }
 std/grid:new(ops, size: 262144) { o: 0[i64], j: 0[i64] }
 std/grid:new(stk, size: 4096) { v: 0[i64] }
-std/store:new(st) { pos: 0[i64], nop: 0[i64], sp: 0[i64], ip: 0[i64], s1: 0[i64], s2: 0[i64], si: 0[i64] }
+std/store:new(st) { pos: 0[i64], nop: 0[i64], sp: 0[i64], ip: 0[i64], s1: 0[i64], s2: 0[i64], si: 0[i64], hwm: 0[i64] }
 
 pub tor ret0 {} -> i64
 ret0 -> 0
@@ -54,7 +56,10 @@ step = if(st.ip < st.nop)
         |> nip(): r -> r
     | else |> if(o == 62 or o == 60)
         | then |> std/store:stored { st.pos: st.pos + o - 61 }
-            |> nip(): r -> r
+            |> if(st.pos > st.hwm)
+                | then |> std/store:stored { st.hwm: st.pos }
+                    |> nip(): r -> r
+                | else |> nip(): r -> r
         | else |> if(o == 46)
             | then |> std/store:stored { st.s1: @rem(st.s1 + @as(i64, tape[st.pos].v), 255) }
                 |> std/store:stored { st.s2: @rem(st.s2 + st.s1, 255) }
@@ -96,11 +101,11 @@ parse = for(0..len)
 // runsrc — src[0..len) already holds the program; parse + reset + interpret,
 // producing the quiet checksum (s2<<8 | s1).
 pub tor runsrc { len: usize } -> i64
-runsrc = std/store:stored { st.nop: 0, st.sp: 0 }
-    |> parse(len): _
-    |> for(0..1048576)
-        ! each i |> std/grid:stored { tape[i].v: 0 }
-        | done |> std/store:stored { st.pos: 0, st.ip: 0, st.s1: 0, st.s2: 0 }
+runsrc = std/grid:for(0..(st.hwm + 1), tape)
+    ! each i |> std/grid:stored { tape[i].v: 0 }
+    | done |> std/store:stored { st.nop: 0, st.sp: 0, st.hwm: 0 }
+        |> parse(len): _
+        |> std/store:stored { st.pos: 0, st.ip: 0, st.s1: 0, st.s2: 0 }
         |> step(): _
         |> idv(v: st.s2 * 256 + st.s1): r -> r
 
