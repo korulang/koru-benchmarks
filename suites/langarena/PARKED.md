@@ -63,6 +63,15 @@ none gate a port today. Last updated: after json_parse_dom landed,
    every arm produces" or teach "drop `->` from the arms to let the
    chain continue." *Decision needed:* diagnostic, or accept.
 
+9b. **PARSE005 pun check misfires on `name: name + expr` after a
+    positional arg.** `pl(i, j: j + 1)` was refused "redundant explicit
+    label 'j:' — the value 'j' already puns" — but `pos: pos + 1`
+    (brainfuck) and `enj(i, j: j + 1)` (nbody, same file!) both compile.
+    Error text also renders stale content when the line changed. Sideways
+    fix used: renamed params (`bi`/`bj`) so args can't start with the
+    param name. *Decision needed:* pin a red parser test and fix the pun
+    detector, or leave.
+
 10. **Grid bytes can't reach a `string` param.** `std/json:parse` wants
     `input: string`; there is no `.k` spelling that hands a grid's byte
     column to it (`doc.b[0..n]` emits undeclared Zig, `std/string:append`
