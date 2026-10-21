@@ -109,6 +109,17 @@ landed, 34/44 ports green.
     either way); must be re-verified for any new draw-consuming task.
     If a task ever splits on it, the ports need multiply-first order.
 
-13. **Suite runtime is Debug builds.** All numbers here are correctness
+13. **Length-only checksums can't see wrong bytes.** The Compress
+    encoders accumulate `encoded.len` — compress_lzw_encode passed its
+    exact oracle while emitting -1 for every len-1 code (seed dict
+    entries sat in the wrong hash buckets; `st.pc` was advanced before
+    the seed `lkup`, so seeds hashed unwritten pool bytes). Caught by
+    compress_lzw_decode's byte-exact roundtrip gate, fixed in both
+    files, encode commit amended (5d748a7). Rule of thumb for future
+    encode-only tasks: checksum agreement is necessary, not
+    sufficient — pin emitted content (a hash of the bytes) in the
+    smoke when the scored oracle is length-only.
+
+14. **Suite runtime is Debug builds.** All numbers here are correctness
     receipts, not performance. Before any LangArena submission/perf claim:
     ReleaseFast builds, honest protocol, no mean-on-laptop numbers.
