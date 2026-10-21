@@ -129,3 +129,22 @@ red is sort_self (see #11).
 14. **Suite runtime is Debug builds.** All numbers here are correctness
     receipts, not performance. Before any LangArena submission/perf claim:
     ReleaseFast builds, honest protocol, no mean-on-laptop numbers.
+
+15. **claims_descendants transforms nested in a claimed body double-fire**
+    (found 2026-10-21, wiring `std/grid:for`). A `std/grid:sweep` or
+    `std/grid:for` site nested inside another's `! each`/`! sweep` body —
+    or inside its `| done` tail — has its generated units emitted twice
+    (`duplicate struct member` at Zig compile). Reproduced with
+    sweep-in-sweep, so it's the transform-runner's limitation, not the
+    construct's. `grid:for` refuses the shape loudly (KORU161, "hoist the
+    inner loop into a tor"). Fix belongs in the transform runner:
+    generated units from an inner claimed site must not re-enter the
+    outer clone's write-back path.
+
+16. **grid-loop bodies see module scope + the cursor only.** A body that
+    references a caller-scope binding (tor param, local) emits undeclared
+    identifiers in the generated body event — the event handler is a
+    separate proc and nothing captures the caller's frame. Worked around
+    in goose-race/primes by hoisting `lim` into the module-level `st`
+    store. Same limit as sweep. The range expressions are NOT affected —
+    they ride in as driver-event input and lower at the call site.
