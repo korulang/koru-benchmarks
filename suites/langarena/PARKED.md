@@ -41,12 +41,16 @@ none gate a port today. Last updated: after maze_* commits (b0f515d),
    failure, but only because we checksum). *Decision needed:* accept
    (column-scoped is the design) or revisit.
 
-7. **`|> if` is terminal in a tor-body chain.** A `|>` step following an
-   `if` step's arms is "stray continuation" (KORU010) — the chain cannot
-   resume at the if's level; continuations live inside the arms.
-   Sequential conditionals become call steps (wone/pushw/gdig/…).
-   Related to #5 — same produce/chain grammar corner.
-   *Decision needed:* document as designed or widen the grammar.
+7. **`|>` continuations are column-scoped; KORU010 doesn't say so.**
+   A step after an `if`'s arms must align with the `| then`/`| else`
+   column — probe: `|> if` at col 4, arms at col 8, continuation at
+   col 4 → "stray continuation"; same continuation at col 8 compiles
+   and runs (the if's continuation lives at the arm column, same
+   column-scoping family as `| done`, #6). Not a grammar gap — the
+   diagnostic just doesn't teach the fix. Sequential conditionals
+   still read better as call steps (wone/pushw/gdig/…).
+   *Decision needed:* improve KORU010's hint to name the arm-column
+   rule or leave as-is.
 
 8. **Store/grid field names collide with Zig keywords unguarded.**
    `st.fn` emitted `__koru_store_st.fn` and failed at Zig-compile time

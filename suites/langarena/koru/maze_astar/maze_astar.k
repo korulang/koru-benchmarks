@@ -20,9 +20,10 @@
 // (fr: {cell, next neighbor slot}) replaying the same descent —
 // depth is 0 at these seeds but the frame form is faithful anyway.
 //
-// Grammar note: a `|> if` step is terminal in a tor-body chain —
-// nothing may follow its arms, so sequential conditionals are call
-// steps (wone/pushw/gdig/geof) and continuations live inside arms.
+// Grammar note: `|>` continuations are column-scoped — a step after
+// an `if`'s arms must align with the `| then`/`| else` column, not the
+// `|> if` column (misaligned => KORU010). Sequential conditionals are
+// instead call steps (wone/pushw/gdig/geof), keeping the chain flat.
 // BFS adds st.pv2 for the popped record id and reuses the dig stack
 // grid q as the fifo — it is empty after generate.
 //
