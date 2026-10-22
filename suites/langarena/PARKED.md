@@ -143,3 +143,19 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     in goose-race/primes by hoisting `lim` into the module-level `st`
     store. Same limit as sweep. The range expressions are NOT affected —
     they ride in as driver-event input and lower at the call site.
+
+17. **`==` inside a bound `if` expression emits colliding `blk:` labels**
+    (found 2026-10-22, compress_bwt_encode nrn). `idv(v: if (a == b) x
+    else y)` fails Zig-side with `redefinition of label 'blk'`: the
+    generic equality dispatcher opens a `blk:` block, and the bound
+    const's own `break :blk` wrapper reuses the same label. `<`, `>=`
+    comparisons emit plain — only `==`/`!=` get the type-dispatch
+    boilerplate. Worked around by keeping equality dispatch in tor-arm
+    `if`s (early-return shape) and reserving bound if-expressions for
+    ordered comparisons. Fix: unique label names per emission site in
+    the equality/codegen path.
+
+18. **Nested if-expressions inside `idv(...)` also collide.** Same
+    mechanism as #17 — `idv(v: if c1 (if c2 x else y) else z)` puts a
+    second `blk:` inside the first. Flatten to two separate bound
+    if-expression binds.
