@@ -156,6 +156,12 @@ per-run table clearing.
 - **Pure-expression `value` via `*%`-scaling**: 5.0G vs 4.4G — worse than
   the cond cascade it replaced (pre-recipe-3).
 - **`idv` binds that LLVM folds away**: `st.probe - st.probe` — dead.
+- **Byte-window param in a per-bit self-loop**: reloading the byte once
+  per 8 bits *added* 0.4s in huff_decode — the extra register crossing
+  the self-loop boundary costs more than 7 redundant same-byte loads.
+- **`@rem(@divFloor(x, 1<<k), 2)` for bit extraction**: i64 divFloor+rem
+  does not fold as cleanly as u8 `>>`/`&` — +0.27s in the same loop.
+  Extract bits in the narrow type, widen after.
 
 ## The loop of attack, per deficit
 
