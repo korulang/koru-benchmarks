@@ -185,3 +185,8 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     can't use `std/grid:slice` still pay `__koru_at` panic-path reads
     per access. A `0[grid]`-style certified index or documented
     unchecked-read spelling would close it. (arith_decode contestant)
+
+23. **std/fmt float `{d:.N}` costs ~48ns/call.** bufPrint dominates
+    any formatting-heavy task (86% of json_generate's 0.40s). An
+    int->decimal emit helper or a fixed-precision fast path in
+    koru_std would pay across the suite. (json_generate contestant)
