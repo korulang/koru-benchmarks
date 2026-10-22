@@ -17,6 +17,18 @@ std/grid:new(strb, size: 108000) { b: 0[u8] }
 std/grid:new(pr, size: 1000) { o1: 0[i64], l1: 0[i64], o2: 0[i64], l2: 0[i64] }
 std/grid:new(m1, size: 54) { v: 0[i64] }
 std/grid:new(m2, size: 54) { v: 0[i64] }
+std/grid:slice(strb_s) { strb.b }
+std/grid:slice(o1_s) { pr.o1 }
+std/grid:slice(l1_s) { pr.l1 }
+std/grid:slice(o2_s) { pr.o2 }
+std/grid:slice(l2_s) { pr.l2 }
+std/grid:slice(m1_s) { m1.v }
+std/grid:slice(m2_s) { m2.v }
+
+pub tor idv { v: i64 } -> i64
+idv = if(0 == 0)
+| then -> v
+| else -> v
 std/store:new(st) { last: 42[i64], res: 0[i64], off: 0[i64], md: 0[i64], m: 0[i64], k: 0[i64], tr: 0[i64], ws: 0[i64], we: 0[i64] }
 
 pub tor ret0 { } -> i64
@@ -63,76 +75,71 @@ genp = if(p < 1000)
 // clrm — reset both match-flag rows
 pub tor clrm { i: i64 } -> i64
 clrm = if(i < 54)
-| then |> std/grid:stored { m1[i].v: 0 }
-    |> std/grid:stored { m2[i].v: 0 }
+| then |> std/grid:stored { m1_s[@as(usize, @intCast(i))]: 0 }
+    |> std/grid:stored { m2_s[@as(usize, @intCast(i))]: 0 }
     |> clrm(i: i + 1): r -> r
 | else -> 0
 
-// jsc — scan s1[i]'s match window [st.ws..st.we]; first unmatched
-// equal char wins (reference breaks out of the scan)
-pub tor jsc { p: i64, i: i64, j: i64 } -> i64
-jsc = if(j <= st.we)
-| then |> if(m2[j].v == 0 and strb[pr[p].o1 + i].b == strb[pr[p].o2 + j].b)
-        | then |> std/grid:stored { m1[i].v: 1 }
-            |> std/grid:stored { m2[j].v: 1 }
-            |> std/store:stored { st.m: st.m + 1 }: _ -> 1
-        | else |> jsc(p, i, j: j + 1): r -> r
-| else -> 0
+// jsc — scan s1[i]'s match window [j..we]; first unmatched equal
+// char wins (reference breaks out of the scan). Produces running m.
+pub tor jsc { a: i64, ob: i64, i: i64, j: i64, we: i64, m: i64 } -> i64
+jsc = if(j <= we)
+| then |> if(m2_s[@as(usize, @intCast(j))] == 0)
+        | then |> if(strb_s[@as(usize, @intCast(a + i))] == strb_s[@as(usize, @intCast(ob + j))])
+            | then |> std/grid:stored { m1_s[@as(usize, @intCast(i))]: 1 }
+                |> std/grid:stored { m2_s[@as(usize, @intCast(j))]: 1 }
+                |> ret0(): _ -> m + 1
+            | else |> jsc(a, ob, i, j: j + 1, we, m): r -> r
+        | else |> jsc(a, ob, i, j: j + 1, we, m): r -> r
+| else -> m
 
-// jm1 — match pass over s1 positions
-pub tor jm1 { p: i64, i: i64 } -> i64
-jm1 = if(i < pr[p].l1)
-| then |> if(i > st.md)
-        | then |> std/store:stored { st.ws: i - st.md }
-        | else |> std/store:stored { st.ws: 0 }
-    |> if(i + st.md < pr[p].l2 - 1)
-        | then |> std/store:stored { st.we: i + st.md }
-        | else |> std/store:stored { st.we: pr[p].l2 - 1 }
-    |> jsc(p, i, j: st.ws): _
-    |> jm1(p, i: i + 1): r -> r
-| else -> 0
+// jm1 — match pass over s1 positions; ws/we bound per i, m threads
+// through as a param. Produces final m.
+pub tor jm1 { a: i64, ob: i64, l1: i64, l2: i64, md: i64, i: i64, m: i64 } -> i64
+jm1 = if(i < l1)
+| then |> idv(v: if(i > md) i - md else 0): ws
+    |> idv(v: if(i + md < l2 - 1) i + md else l2 - 1): we
+    |> jsc(a, ob, i, j: ws, we, m): m2
+    |> jm1(a, ob, l1, l2, md, i: i + 1, m: m2): r -> r
+| else -> m
 
 // trp — transposition pass: k walks s2's matched flags; each matched
-// s1[i] is compared against s2[k] in match order
-pub tor trp { p: i64, i: i64 } -> i64
-trp = if(i < pr[p].l1)
-| then |> if(m1[i].v == 1)
-        | then |> kadv(p): _
-            |> if(st.k < pr[p].l2)
-                | then |> if(strb[pr[p].o1 + i].b == strb[pr[p].o2 + st.k].b)
-                    | then |> ret0(): _
-                    | else |> std/store:stored { st.tr: st.tr + 1 }
-                |> std/store:stored { st.k: st.k + 1 }
-            | else |> ret0(): _
-        | else |> ret0(): _
-    |> trp(p, i: i + 1): r -> r
-| else -> 0
+// s1[i] is compared against s2[k] in match order. Produces tr.
+pub tor trp { a: i64, ob: i64, l1: i64, l2: i64, i: i64, k: i64, tr: i64 } -> i64
+trp = if(i < l1)
+| then |> if(m1_s[@as(usize, @intCast(i))] == 1)
+        | then |> kadv(l2, k): k2
+            |> if(k2 < l2)
+                | then |> if(strb_s[@as(usize, @intCast(a + i))] == strb_s[@as(usize, @intCast(ob + k2))])
+                    | then |> trp(a, ob, l1, l2, i: i + 1, k: k2 + 1, tr): r -> r
+                    | else |> trp(a, ob, l1, l2, i: i + 1, k: k2 + 1, tr: tr + 1): r -> r
+                | else |> trp(a, ob, l1, l2, i: i + 1, k: k2, tr): r -> r
+        | else |> trp(a, ob, l1, l2, i: i + 1, k, tr): r -> r
+| else -> tr
 
-// kadv — advance k past unmatched s2 flags
-pub tor kadv { p: i64 } -> i64
-kadv = if(st.k < pr[p].l2 and m2[st.k].v == 0)
-| then |> std/store:stored { st.k: st.k + 1 }
-    |> kadv(p): r -> r
-| else -> 0
+// kadv — advance k past unmatched s2 flags; produces k
+pub tor kadv { l2: i64, k: i64 } -> i64
+kadv = if(k < l2)
+| then |> if(m2_s[@as(usize, @intCast(k))] == 0)
+    | then |> kadv(l2, k: k + 1): r -> r
+    | else |> ret0(): _ -> k
+| else -> k
 
 // jpair — one pair's Jaro score: match pass, transposition pass,
 // (m/l1 + m/l2 + (m-tr)/m)/3 * 1000 floored into st.res
 pub tor jpair { p: i64 } -> i64
 jpair = if(p < 1000)
 | then |> clrm(i: 0): _
-    |> std/store:stored { st.m: 0 }
-    |> std/store:stored { st.tr: 0 }
-    |> std/store:stored { st.k: 0 }
-    |> if(pr[p].l1 > pr[p].l2)
-        | then |> std/store:stored { st.md: @divTrunc(pr[p].l1, 2) - 1 }
-        | else |> std/store:stored { st.md: @divTrunc(pr[p].l2, 2) - 1 }
-    |> if(st.md < 0)
-        | then |> std/store:stored { st.md: 0 }
-        | else |> ret0(): _
-    |> jm1(p, i: 0): _
-    |> if(st.m > 0)
-        | then |> trp(p, i: 0): _
-            |> std/store:stored { st.res: st.res + @as(i64, @intFromFloat(@floor((@as(f64, @floatFromInt(st.m)) / @as(f64, @floatFromInt(pr[p].l1)) + @as(f64, @floatFromInt(st.m)) / @as(f64, @floatFromInt(pr[p].l2)) + (@as(f64, @floatFromInt(st.m)) - @as(f64, @floatFromInt(@divTrunc(st.tr, 2)))) / @as(f64, @floatFromInt(st.m))) / 3.0 * 1000.0))) }
+    |> idv(v: l1_s[@as(usize, @intCast(p))]): l1
+    |> idv(v: l2_s[@as(usize, @intCast(p))]): l2
+    |> idv(v: o1_s[@as(usize, @intCast(p))]): a
+    |> idv(v: o2_s[@as(usize, @intCast(p))]): ob
+    |> idv(v: if(l1 > l2) @divTrunc(l1, 2) - 1 else @divTrunc(l2, 2) - 1): md0
+    |> idv(v: if(md0 < 0) 0 else md0): md
+    |> jm1(a, ob, l1, l2, md, i: 0, m: 0): m
+    |> if(m > 0)
+        | then |> trp(a, ob, l1, l2, i: 0, k: 0, tr: 0): tr
+            |> std/store:stored { st.res: st.res + @as(i64, @intFromFloat(@floor((@as(f64, @floatFromInt(m)) / @as(f64, @floatFromInt(l1)) + @as(f64, @floatFromInt(m)) / @as(f64, @floatFromInt(l2)) + (@as(f64, @floatFromInt(m)) - @as(f64, @floatFromInt(@divTrunc(tr, 2)))) / @as(f64, @floatFromInt(m))) / 3.0 * 1000.0))) }
         | else |> ret0(): _
     |> jpair(p: p + 1): r -> r
 | else -> 0
