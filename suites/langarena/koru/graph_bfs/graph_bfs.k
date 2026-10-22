@@ -9,6 +9,10 @@
 //   bfs_shortest_path(0, V-1): FIFO queue; scanning neighbors returns
 //     dist+1 on target hit; unvisited neighbors push at dist+1.
 //
+// Result: ~0.55s -> ~0.40s whole-process (48 runs + graph build +
+//   I/O) by porting graph_dfs.k's branchless push into the scan —
+//   0.40/0.646 = ~0.62x of the quoted Rust time, min-of-5.
+//
 // Faithfulness differences, stated:
 // - adjacency is CSR (deg count pass -> prefix offsets -> place pass)
 //   rather than Array(Array). Append order per vertex is preserved
@@ -24,7 +28,9 @@
 //   per-entry dist is recovered by BFS level tracking: `lend` is the
 //   queue index where the current level ends — when the pop cursor
 //   crosses it, d+1 and lend=tail. Identical dist values, one compare
-//   per pop, no second queue column.
+//   per pop, no second queue column. DFS's packed (v,d) stack has no
+//   port here: BFS already pushes one u32 — the pack's payload is
+//   implicit in level boundaries.
 // - visited is a u8 epoch grid: run i marks with tag i+1, so a stale
 //   byte from an earlier run reads as unvisited without re-zeroing
 //   (reference allocates a fresh visited array per run — same state).
@@ -46,6 +52,30 @@
 //   register-resident cursors per recipe 6; the k<kend check is first
 //   so per-edge work is load-t/cmp/load-vis/cmp/k++ only.
 //
+// Falsified / rejected hypotheses (all checksum-green unless noted):
+// - DFS's 4-way scan unroll does NOT port: scalar branchless 0.40s,
+//   4-way 0.42s, 8-way 0.41s (min-of-5). DFS's scan stores once per
+//   edge (push only — mark-on-pop); BFS stores twice (mark + push —
+//   mark-on-push). The scalar loop already saturates the store side;
+//   unrolling only adds code.
+// - Mark-on-pop (DFS's pop-time mark) is not BFS-equivalent: without
+//   push-time dedupe every neighbor enters the queue per in-edge,
+//   the queue grows super-linearly, and each duplicate re-expands.
+//   Rejected by analysis, not implemented.
+// - u64-bitmap visited: carried over from DFS's falsified entry
+//   (bit test+set RMW lost to the byte load there); BFS's per-edge
+//   pattern is the same — not re-run.
+// - Returning at flagged-PUSH instead of flagged-pop: push order and
+//   pop order coincide (same level, FIFO), so the value is identical
+//   and the pop check stays — it runs once per vertex, not per edge.
+// - Memoizing the 48 identical runs: same rejection as DFS — the
+//   runs ARE identical, folding them skips the benchmark's unit of
+//   work. Rejected on faithfulness.
+//
+// Phase split (probes gb_pa/gb_pb/gb_p1): pass A + prefix ~20ms,
+//   + pass B ~30ms, + 1 run ~50ms — the 48 walks are ~92% of the
+//   process; ~10.5M edge scans per run at ~0.73ns/edge.
+//
 import std/io
 import std/grid
 import std/store
@@ -55,7 +85,7 @@ std/grid:new(off, size: 500001) { s: 0[u32] }
 std/grid:new(cur, size: 500000) { p: 0[u32] }
 std/grid:new(adj, size: 10566682) { t: 0[u32] }
 std/grid:new(vis, size: 500000) { f: 0[u8] }
-std/grid:new(qv, size: 500000) { v: 0[u32] }
+std/grid:new(qv, size: 500004) { v: 0[u32] }
 std/store:new(st) { acc: 0[i64] }
 
 std/grid:slice(degr) { deg.c }
@@ -144,22 +174,39 @@ gput = if(v < 500000)
 // recursion does not tail-lower). Loop state rides parameters:
 //   head = pop cursor, tail = push cursor, k/kend = edge scan range
 //   of the current vertex, d = its dist, lend = queue index where
-//   level d ends, e = this run's visited-epoch tag. The level check
-//   runs before the flag return so a flagged vertex popping exactly
-//   on the boundary still returns dist(v2)+1 = d+2.
-// Shape: `k < kend` first, so the hot edge path is one u32 adj load,
-// one u8 visited load, the epoch compare, and k++ — target-adjacency
-// (off bit 31) and queue/level bookkeeping run once per vertex.
-// The drain path reads qvr[head+1] only under head+1 < tail, so it
-// can never index past the queue — no garbage read on drain.
+//   level d ends (index of the first next-level vertex), e = this
+//   run's visited-epoch tag. The level check runs before the flag
+//   return so a flagged vertex popping exactly on the boundary still
+//   returns dist(v2)+1 = d+2.
+// Scan path is the DFS branchless shape (graph_dfs.k): per edge the
+// OLD vis byte is read first, then e is stored unconditionally
+// (idempotent — re-writing the tag is a no-op), the candidate is
+// unconditionally written to qvr[tail], and tail advances by the
+// eligibility bit only (ldr/ldrb/strb/str/cmp/cinc — no branch on
+// the visited decision). A rejected candidate sits at the commit
+// point and is overwritten by the next eligible push — queue slots
+// beyond tail are unobservable (qv is sized 500004 so the deepest
+// speculative index tail <= 500000 stays in bounds; the commit
+// bound is unchanged). Read-before-store ordering is load-bearing:
+// a repeated neighbor id must see the byte an earlier edge wrote,
+// and the |> sequence keeps it.
+// NOT unrolled — falsified here though it paid in DFS: BFS carries
+// TWO stores per edge (mark + push) where DFS's scan carried one
+// (push only, mark-on-pop). Measured: scalar 0.40s < 4-way 0.42s ~
+// 8-way 0.41s (min-of-5); the extra code buys nothing once the
+// loop is store-bound.
+// `k < kend` first, so per-edge work is the six ops above; target-
+// adjacency (off bit 31) and level bookkeeping run once per vertex.
+// The drain path reads qvr[head+1] only under head+1 < tail — no
+// garbage read on drain.
 pub tor walk { head: usize, tail: usize, k: usize, kend: usize, d: i64, lend: usize, e: usize } -> i64
 walk = if(k < kend)
 | then |> idvu(v: adjr[k]): t
-    |> if(visr[t] != e)
-        | then |> std/grid:stored { visr[t]: @as(u8, @intCast(e)) }
-            |> std/grid:stored { qvr[tail]: @as(u32, @intCast(t)) }
-            |> walk(head, tail: tail + 1, k: k + 1, kend, d, lend, e): r -> r
-        | else |> walk(head, tail, k: k + 1, kend, d, lend, e): r -> r
+    |> idvu(v: visr[t]): o1
+    |> std/grid:stored { visr[t]: @as(u8, @intCast(e)) }
+    |> std/grid:stored { qvr[tail]: @as(u32, @intCast(t)) }
+    |> idvu(v: if(o1 != e) 1 else 0): b1
+    |> walk(head, tail: tail + b1, k: k + 1, kend, d, lend, e): r -> r
 | else |> if(head + 1 < tail)
     | then |> idvu(v: qvr[head + 1]): v2
         |> idvu(v: offr[v2]): ov
