@@ -104,6 +104,19 @@ Print per-phase ms deltas (`std/time:now`) so "the 10% gap" becomes
 problems, three different fixes. Whole-process numbers hide where the
 work actually is.
 
+### 11. Computable positions → grid, not `std/store:insert`
+`binarytrees_arena` paid `std/store:insert`'s per-row machinery ~75M
+times (0.99s). The reference's push-order arena positions were DFS
+preorder indexes — pure arithmetic (`left = h+1`, `right = h + 2^depth`)
+— so a `std/grid` at the reference's exact row layout replaced the store
+entirely: 0.99s → 0.11s (3.52× behind Rust → 0.39× ahead). Rules: every
+grid slot is live (no fake-free pool — that would be a store wearing a
+grid's name), positions must be *computable* not sequential-with-state,
+and order-independent aggregates (`sum`) scan linearly instead of
+pointer-chasing. Disclose the replacement in the kernel header and diff
+the disasm to prove the field stores survived — LLVM DSE is the
+falsifier that would make the win dishonest.
+
 ## The falsified list — hypotheses that cost runs
 
 - **`while`→counted `for` driver**: honest (the trip count is real) but
