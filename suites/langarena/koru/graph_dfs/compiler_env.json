@@ -1,0 +1,1 @@
+{"lang":"zig","library":false,"flags":["release=fast","build=macos"],"entry_file":"/Users/larsde/src/koru-benchmarks/suites/langarena/koru/graph_dfs/graph_dfs.k","entry_dir":"/Users/larsde/src/koru-benchmarks/suites/langarena/koru/graph_dfs","project_root":"/Users/larsde/src/koru-benchmarks/suites/langarena/koru/graph_dfs","koru_home":"/Users/larsde/src/koru","env":{}}
