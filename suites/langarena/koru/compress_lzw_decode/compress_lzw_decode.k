@@ -10,21 +10,31 @@
 // Decode needs no hashing: dict is a code-indexed table, entries
 // are (pool offset, len) pairs — same "copied bytes" model as the
 // encoder's arena.
+//
+// Perf (2026-10-22): byte grids are u8 (i64 cells were 8x the
+// copy traffic — the single biggest deficit), emt/c2p are
+// counted-for copies over borrowed pl/dl slices (verbatim
+// indexing, ds bumped per string not per byte). Encoded stream
+// is 9358B = 4679 codes, so per-code st.* traffic is trivial;
+// the byte volume is the task. 1.70s -> 0.59s, checksum
+// 1920113440 verified.
 
 import std/io
 import std/grid
 import std/store
 
-std/grid:new(pat, size: 11) { b: 0[i64] }
-std/grid:new(dat, size: 1000007) { b: 0[i64] }
-std/grid:new(pool, size: 4000000) { b: 0[i64] }
+std/grid:new(pat, size: 11) { b: 0[u8] }
+std/grid:new(dat, size: 1000007) { b: 0[u8] }
+std/grid:new(pool, size: 4000000) { b: 0[u8] }
 std/grid:new(tag, size: 8192) { v: 0[i64] }
 std/grid:new(ks, size: 8192) { v: 0[i64] }
 std/grid:new(kl, size: 8192) { v: 0[i64] }
 std/grid:new(kc, size: 8192) { v: 0[i64] }
-std/grid:new(out, size: 400100) { b: 0[i64] }
-std/grid:new(dec, size: 1000007) { b: 0[i64] }
+std/grid:new(out, size: 400100) { b: 0[u8] }
+std/grid:new(dec, size: 1000007) { b: 0[u8] }
 std/grid:new(dd, size: 100000) { off: 0[i64], ln: 0[i64] }
+std/grid:slice(pl) { pool.b }
+std/grid:slice(dl) { dec.b }
 std/store:new(st) { res: 0[i64], n: 1000007[i64], p: 0[i64], cs: 0[i64], cl: 0[i64], ep: 0[i64], pc: 0[i64], nc: 0[i64], hh: 0[i64], sl: 0[i64], sn: 0[i64], ql: 0[i64], t1: 0[i64], t2: 0[i64], t3: 0[i64], sym: 0[i64], ds: 0[i64], el: 0[i64], pos: 0[i64], prc: 0[i64], prs: 0[i64], prl: 0[i64], ok: 0[i64] }
 
 pub tor ret0 { } -> i64
@@ -46,7 +56,7 @@ hsh = std/store:stored { st.hh: 5381 }
 
 pub tor hshl { po: i64, l: i64 } -> i64
 hshl = if(l > 0)
-| then |> std/store:stored { st.hh: @rem(st.hh * 33 + pool[po].b, 4294967296) }
+| then |> std/store:stored { st.hh: @rem(st.hh * 33 + @as(i64, pool[po].b), 4294967296) }
     |> hshl(po: po + 1, l: l - 1): r -> r
 | else -> st.hh
 
@@ -88,7 +98,7 @@ cpd = if(l > 0)
 // sed — seed the dict: pool[b]=b, probe-and-insert code b
 pub tor sed { b: i64 } -> i64
 sed = if(b < 256)
-| then |> std/grid:stored { pool[b].b: b }
+| then |> std/grid:stored { pool[b].b: @as(u8, @intCast(b)) }
     |> std/store:stored { st.pc: b }
     |> std/store:stored { st.ql: 1 }
     |> lkup(): cd
@@ -101,8 +111,8 @@ sed = if(b < 256)
 
 // emit — append code as big-endian u16
 pub tor emit { c: i64 } -> i64
-emit = std/grid:stored { out[st.p].b: @rem(@divFloor(c, 256), 256) }
-    |> std/grid:stored { out[st.p + 1].b: @rem(c, 256) }
+emit = std/grid:stored { out[st.p].b: @as(u8, @intCast(@rem(@divFloor(c, 256), 256))) }
+    |> std/grid:stored { out[st.p + 1].b: @as(u8, @intCast(@rem(c, 256))) }
     |> std/store:stored { st.p: st.p + 2 }
     |> ret0(): _ -> 0
 
@@ -158,26 +168,26 @@ enc1 = std/store:stored { st.ep: st.ep + 1 }
 // dsd — seed dict codes 0..255: dd[b] = (pool_off=b, len=1)
 pub tor dsd { b: i64 } -> i64
 dsd = if(b < 256)
-| then |> std/grid:stored { pool[b].b: b }
+| then |> std/grid:stored { pool[b].b: @as(u8, @intCast(b)) }
     |> std/grid:stored { dd[b].off: b }
     |> std/grid:stored { dd[b].ln: 1 }
     |> dsd(b: b + 1): r -> r
 | else -> 0
 
-// emt — append pool[off..off+len] to dec at st.ds
+// emt — append pool[off..off+len] to dec at st.ds. Borrowed-slice
+// counted-for copy: pl/dl index verbatim (no floor checks), ds bumped
+// once per string, not once per byte.
 pub tor emt { off: i64, l: i64 } -> i64
-emt = if(l > 0)
-| then |> std/grid:stored { dec[st.ds].b: pool[off].b }
-    |> std/store:stored { st.ds: st.ds + 1 }
-    |> emt(off: off + 1, l: l - 1): r -> r
-| else -> 0
+emt = for(0..@as(usize, @intCast(l)))
+    ! each k |> std/grid:stored { dl[@as(usize, @intCast(st.ds)) + k]: pl[@as(usize, @intCast(off)) + k] }
+    |> std/store:stored { st.ds: st.ds + l }
+    |> ret0(): _ -> 0
 
 // c2p — copy pool[src..src+l] to pool[dst..] (entry materialization)
 pub tor c2p { src: i64, dst: i64, l: i64 } -> i64
-c2p = if(l > 0)
-| then |> std/grid:stored { pool[dst].b: pool[src].b }
-    |> c2p(src: src + 1, dst: dst + 1, l: l - 1): r -> r
-| else -> 0
+c2p = for(0..@as(usize, @intCast(l)))
+    ! each k |> std/grid:stored { pl[@as(usize, @intCast(dst)) + k]: pl[@as(usize, @intCast(src)) + k] }
+    |> ret0(): _ -> 0
 
 // dins — dict append: dd[nc] = prev_str + pool[st.t2]
 // st.prs/st.prl = prev_str slice; st.t2 = first byte of current_str
@@ -185,7 +195,7 @@ pub tor dins { } -> i64
 dins = std/grid:stored { dd[st.nc].off: st.pc }
     |> std/grid:stored { dd[st.nc].ln: st.prl + 1 }
     |> c2p(src: st.prs, dst: st.pc, l: st.prl): _
-    |> std/grid:stored { pool[st.pc + st.prl].b: st.t2 }
+    |> std/grid:stored { pool[st.pc + st.prl].b: @as(u8, @intCast(st.t2)) }
     |> std/store:stored { st.pc: st.pc + st.prl + 1 }
     |> std/store:stored { st.nc: st.nc + 1 }
     |> ret0(): _ -> 0
@@ -195,21 +205,21 @@ dins = std/grid:stored { dd[st.nc].off: st.pc }
 // prev_str+prev_str[0]; else -> stop (InvalidCode).
 pub tor lzd { } -> i64
 lzd = if(st.pos < st.el)
-| then |> std/store:stored { st.t1: out[st.pos].b * 256 + out[st.pos + 1].b }
+| then |> std/store:stored { st.t1: @as(i64, out[st.pos].b) * 256 + @as(i64, out[st.pos + 1].b) }
     |> std/store:stored { st.pos: st.pos + 2 }
     |> if(st.t1 < st.nc)
-        | then |> std/store:stored { st.t2: pool[dd[st.t1].off].b }
+        | then |> std/store:stored { st.t2: @as(i64, pool[dd[st.t1].off].b) }
             |> emt(off: dd[st.t1].off, l: dd[st.t1].ln): _
             |> dins(): _
             |> std/store:stored { st.prs: dd[st.t1].off }
             |> std/store:stored { st.prl: dd[st.t1].ln }
             |> lzd(): r -> r
         | else |> if(st.t1 == st.nc)
-            | then |> std/store:stored { st.t2: pool[st.prs].b }
+            | then |> std/store:stored { st.t2: @as(i64, pool[st.prs].b) }
                 |> std/store:stored { st.t3: st.pc }
                 |> std/store:stored { st.sym: st.prl + 1 }
                 |> c2p(src: st.prs, dst: st.pc, l: st.prl): _
-                |> std/grid:stored { pool[st.t3 + st.prl].b: st.t2 }
+                |> std/grid:stored { pool[st.t3 + st.prl].b: @as(u8, @intCast(st.t2)) }
                 |> std/store:stored { st.pc: st.pc + st.sym }
                 |> emt(off: st.t3, l: st.sym): _
                 |> dins(): _
@@ -225,7 +235,7 @@ run1 = std/store:stored { st.pc: 256 }
     |> std/store:stored { st.nc: 256 }
     |> std/store:stored { st.ds: 0 }
     |> dsd(b: 0): _
-    |> std/store:stored { st.t1: out[0].b * 256 + out[1].b }
+    |> std/store:stored { st.t1: @as(i64, out[0].b) * 256 + @as(i64, out[1].b) }
     |> std/store:stored { st.pos: 2 }
     |> emt(off: dd[st.t1].off, l: dd[st.t1].ln): _
     |> std/store:stored { st.prs: dd[st.t1].off }
@@ -261,17 +271,17 @@ fin = if(st.ds == st.n)
 
 // ---- driver ----
 ret0(): _
-|> std/grid:stored { pat[0].b: 65 }
-|> std/grid:stored { pat[1].b: 66 }
-|> std/grid:stored { pat[2].b: 82 }
-|> std/grid:stored { pat[3].b: 65 }
-|> std/grid:stored { pat[4].b: 67 }
-|> std/grid:stored { pat[5].b: 65 }
-|> std/grid:stored { pat[6].b: 68 }
-|> std/grid:stored { pat[7].b: 65 }
-|> std/grid:stored { pat[8].b: 66 }
-|> std/grid:stored { pat[9].b: 82 }
-|> std/grid:stored { pat[10].b: 65 }
+|> std/grid:stored { pat[0].b: @as(u8, 65) }
+|> std/grid:stored { pat[1].b: @as(u8, 66) }
+|> std/grid:stored { pat[2].b: @as(u8, 82) }
+|> std/grid:stored { pat[3].b: @as(u8, 65) }
+|> std/grid:stored { pat[4].b: @as(u8, 67) }
+|> std/grid:stored { pat[5].b: @as(u8, 65) }
+|> std/grid:stored { pat[6].b: @as(u8, 68) }
+|> std/grid:stored { pat[7].b: @as(u8, 65) }
+|> std/grid:stored { pat[8].b: @as(u8, 66) }
+|> std/grid:stored { pat[9].b: @as(u8, 82) }
+|> std/grid:stored { pat[10].b: @as(u8, 65) }
 |> genl(i: 0): _
 |> enc1(): _
 |> runl(k: 0): _
