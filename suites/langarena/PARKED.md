@@ -190,3 +190,23 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     any formatting-heavy task (86% of json_generate's 0.40s). An
     int->decimal emit helper or a fixed-precision fast path in
     koru_std would pay across the suite. (json_generate contestant)
+
+24. **`std/array:sort` should gain an integer radix path.** sort_self's
+    wave-3 contestant replaced `std.mem.sort`->pdq with a pure-.k 2-pass
+    LSD radix (16-bit digits, sign-biased hi digit — full i32 domain)
+    and went 1.19s -> 0.080s, 0.31x vs Rust driftsort. On integer keys
+    a distribution sort beats every comparison sort Zig ships.
+    *Decision needed:* route integer-element sorts to an LSD radix in
+    the std/array template (needs a type-gated path + scratch), expose
+    `std/sort:radix` as a separate surface, or leave it per-kernel.
+    (sort_self contestant, 2026-10-22; judged correct, not yet ported)
+
+25. **A `for`'s `| done` continuation cannot host another `for|done`**
+    (SHAPE002). One unguarded done per chain level; sequencing counted
+    phases forces tor self-loops. Cosmetic — scalar work survives — but
+    it pushes real loops into hand-rolled tails. (sort_self contestant)
+
+26. **Slice write sites need `@as(usize, @intCast(...))` ceremony** even
+    when the index is provably narrow (i32 digit values used as usize
+    positions). Cosmetic; a narrow-int index acceptance would declutter
+    every radix/counting kernel. (sort_self contestant)
