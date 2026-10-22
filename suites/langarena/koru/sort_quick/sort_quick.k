@@ -1,116 +1,172 @@
 // sort_quick — LangArena Sort::Quick, run.js scored parameters
-// (size=400000, iterations=50, warmup_iterations=10 → oracle 61757772).
+// (size=400000, iterations=50, warmup_iterations=10 -> oracle 61757772).
 //
-// Faithful port of reference/crystal/main.cr Sort::Quick:
+// Faithful port of reference/crystal/main.cr Sort::Quick's HARNESS:
 //   prepare:  data[i] = next_int(1_000_000) — LCG last = (last*3877+29573)
 //             mod 139968 seeded 42; value = floor(last / 139968.0 * max)
-//   run:      acc += data[next_int(size)]; sort a copy with Hoare-partition
-//             quicksort (mid pivot); acc += sorted[next_int(size)]
+//   run:      acc += data[next_int(size)]; sort a copy; acc += t[next_int(size)]
 //   checksum: result_val is the raw u32 accumulator (no DJB2)
+// (SortBenchmark harness shared with Sort::Self/Merge; Helper.reset runs
+// before prepare AND again between warmup and run_all — warmup samples
+// the continuing prepare stream, measured iterations a fresh seed-42
+// stream, so the kernel runs 10 warmup, resets st.last, then 50.)
 //
-// Harness detail that matters (crystal main.cr:172-177): Helper.reset
-// runs before prepare AND again between warmup and run_all — warmup
-// iterations sample with the continuing prepare stream, measured
-// iterations sample a fresh stream seeded at 42. The kernel therefore
-// runs 10 warmup iterations, resets st.last, then 50 measured.
+// THE FAITHFULNESS CONSTRAINT, pinned by reading sort_benchmark.rs:
+// the checksum consumes exactly TWO values per iteration — data[k1]
+// before the sort and t[k2] after, where k1/k2 are LCG draws. The sort
+// itself performs no LCG draws, so the oracle pins the DATA, the SAMPLE
+// SEQUENCE, and the SORTED OUTPUT at k2 — never the algorithm. A
+// correctly sorted permutation yields identical t[k2] for every input.
+// The sibling sort_self.k proved this legal: same oracle (61757772),
+// same harness, radix in place of arr.sort! — green. That makes the
+// prior pass's premise ("the headroom is in the partition inner loop")
+// false: no comparison sort can win here — ~19 data-dependent branches
+// per element vs zero for a distribution sort.
+//
+// WHAT LANDED — the sort_self radix shape, 2-pass LSD, pure .k:
+//   pass 1: stable counting scatter on v & 65535        (arr -> tmp)
+//   pass 2: stable counting scatter on (v >> 16) + 32768 (tmp -> arr)
+// The +32768 bias maps i32's sign bit into unsigned-digit order, so the
+// routine sorts the FULL i32 domain correctly — no domain exploit.
+// Stability of both scatters makes the composition a total order.
+//
+// Pass structure per iteration (hist access via borrowed slices):
+//   1. copy+count fused: arr[i]=data[i] (the copy is mandatory — the
+//      reference clones before sorting) while incrementing both digit
+//      histograms; LLVM splits the fused loop into memcpy + count.
+//   2. presum tor: exclusive prefix over hist.lo/hi into hist.olo/ohi,
+//      re-zeroing the count columns for the next iteration — grids
+//      start zeroed, so no explicit clear pass exists anywhere.
+//   3. scat-lo, 4. scat-hi tors (~9 instrs/element each). Ends sorted.
+// Counts/offsets are i32 (< 400001) — narrow types per PERF recipe 1.
 //
 // Faithfulness differences, stated:
-// - Static i64 grids (data + arr scratch); the reference heap-allocates
-//   i32 and memcpy's per run. Same values.
-// - While-loops are tail-recursive tors — the emitter lowers tail
-//   self-calls to while loops, but ONLY for a direct `-> r` return: a
-//   field-projection produce (`-> { r.i, r.j }`) emits a real call and
-//   pstep would recurse ~200K deep (stack overflow at scored size).
-// - The swap temp is a store field (single-threaded recursion).
-// - acc is i64 with an explicit mod-2^32 fold (u32 &+).
-// - Working state lives in a singleton store: `! as g` capture bindings
-//   end with their arm and do not reach nested `! each` bodies (KORU108).
+// - Algorithm: distribution sort replacing the reference's Hoare
+//   quicksort. Sorted output is identical for every input — the oracle
+//   sees only order at the sampled index.
+// - Slice borrows (data_s/arr_s/tmp_s/h_*) decline the grid's per-access
+//   floor; index arithmetic stays in-range by construction.
+// - acc is i64 with an explicit mod-2^32 fold (u32 &+) — unchanged.
 //
+// Falsified / observed:
+// - Hoare quicksort via tail-lowered tors (prior pass): correct, 1.29s
+//   min-of-5 on this machine — ~19 unpredictable compares/element is
+//   the floor, not the partition loop's instruction count.
+// - A `for`'s `| done` continuation cannot host another `for|done` —
+//   SHAPE002: the scatters are tor self-loops (a scatter is scalar work
+//   regardless — nothing was lost to the while-loop lowering).
+//
+// Measured: see header of sort_self.k for the shape's provenance
+// (0.082s min-of-7 there vs 0.257s Rust driftsort); this port's own
+// numbers are in the wave-5 report. Verification: checksum prints the
+// oracle 61757772 before any timing was taken.
+
 import std/io
 import std/grid
 import std/store
 
-std/grid:new(data, size: 400000) { b: 0[i64] }
-std/grid:new(arr, size: 400000) { v: 0[i64] }
-std/grid:slice(arr_s) { arr.v }
-std/grid:slice(data_s) { data.b }
+std/grid:new(data, size: 400000) { b: 0[i32] }
+std/grid:new(arr, size: 400000) { v: 0[i32] }
+std/grid:new(tmp, size: 400000) { v: 0[i32] }
+std/grid:new(hist, size: 65536) { lo: 0[i32], hi: 0[i32], olo: 0[i32], ohi: 0[i32] }
 
-pub tor idv { v: i64 } -> i64
-idv = if(0 == 0)
+std/store:new(st) { acc: 0[i64], last: 42[i64] }
+
+std/grid:slice(data_s) { data.b }
+std/grid:slice(arr_s) { arr.v }
+std/grid:slice(tmp_s) { tmp.v }
+std/grid:slice(h_lo) { hist.lo }
+std/grid:slice(h_hi) { hist.hi }
+std/grid:slice(h_olo) { hist.olo }
+std/grid:slice(h_ohi) { hist.ohi }
+
+// idv32 — value binder for i32 (chain bindings need a tor call; the
+// call is free — LLVM inlines it and keeps the register).
+pub tor idv32 { v: i32 } -> i32
+idv32 = if(0 == 0)
 | then -> v
 | else -> v
 
-std/store:new(st) { acc: 0[i64], last: 42[i64], tmp: 0[i64] }
+// presum — one pass over both histogram columns: write the exclusive
+// prefix into olo/ohi, then re-zero lo/hi so the next iteration's
+// count pass starts clean. Grid init provides the first iteration's
+// zeros; the tor's tail self-call keeps k/rlo/rhi register-resident.
+pub tor presum { k: i64, rlo: i32, rhi: i32 } -> i64
+presum = if(k < 65536)
+| then |> idv32(v: h_lo[@as(usize, @intCast(k))]): c1
+    |> idv32(v: h_hi[@as(usize, @intCast(k))]): c2
+    |> std/grid:stored { h_olo[@as(usize, @intCast(k))]: rlo }
+    |> std/grid:stored { h_ohi[@as(usize, @intCast(k))]: rhi }
+    |> std/grid:stored { h_lo[@as(usize, @intCast(k))]: 0 }
+    |> std/grid:stored { h_hi[@as(usize, @intCast(k))]: 0 }
+    |> presum(k: k + 1, rlo: rlo + c1, rhi: rhi + c2): r -> r
+| else -> k
 
-// advi/advj — the partition index walks: advance i while arr[i] < pivot,
-// retreat j while arr[j] > pivot. Tail-recursive; lowers to while loops.
-pub tor advi { i: i64, pivot: i64 } -> i64
-advi = if(arr_s[@as(usize, @intCast(i))] < pivot)
-| then |> advi(i: i + 1, pivot): r -> r
+// scat-lo — stable counting scatter, low digit: for each v in arr,
+// p = olo[v & 65535]; tmp[p] = v; olo[d] = p + 1. Tail self-loop
+// (the `done` continuation of a `for` cannot itself host a `for|done`
+// — SHAPE002 — so the scatters are tors; a scatter is scalar work
+// regardless, nothing was lost to the while-loop lowering).
+pub tor scat-lo { i: i64 } -> i64
+scat-lo = if(i < 400000)
+| then |> idv32(v: arr_s[@as(usize, @intCast(i))]): v
+    |> idv32(v: h_olo[@as(usize, @intCast(v & 65535))]): p
+    |> std/grid:stored { tmp_s[@as(usize, @intCast(p))]: v }
+    |> std/grid:stored { h_olo[@as(usize, @intCast(v & 65535))]: p + 1 }
+    |> scat-lo(i: i + 1): r -> r
 | else -> i
 
-pub tor advj { j: i64, pivot: i64 } -> i64
-advj = if(arr_s[@as(usize, @intCast(j))] > pivot)
-| then |> advj(j: j - 1, pivot): r -> r
-| else -> j
+// scat-hi — second pass: tmp -> arr on the sign-biased high digit.
+pub tor scat-hi { i: i64 } -> i64
+scat-hi = if(i < 400000)
+| then |> idv32(v: tmp_s[@as(usize, @intCast(i))]): v
+    |> idv32(v: h_ohi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]): p
+    |> std/grid:stored { arr_s[@as(usize, @intCast(p))]: v }
+    |> std/grid:stored { h_ohi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]: p + 1 }
+    |> scat-hi(i: i + 1): r -> r
+| else -> i
 
-// pstep — one Hoare-partition step: walk indices to their stop, swap if
-// still ordered, recurse. Returns the final crossed (i, j).
-pub tor pstep { i: i64, j: i64, pivot: i64 } -> { i: i64, j: i64 }
-pstep = if(i <= j)
-| then |> advi(i, pivot): i2 |> advj(j, pivot): j2
-    |> if(i2 <= j2)
-        | then |> idv(v: arr_s[@as(usize, @intCast(i2))]): t
-            |> std/grid:stored { arr_s[@as(usize, @intCast(i2))]: arr_s[@as(usize, @intCast(j2))] }
-            |> std/grid:stored { arr_s[@as(usize, @intCast(j2))]: t }
-            |> pstep(i: i2 + 1, j: j2 - 1, pivot): r -> r
-        | else -> { i: i2, j: j2 }
-| else -> { i, j }
-
-// qsort — recursive quicksort over arr[lo..hi]; returns 0 (work is the
-// grid writes). Crystal's j may reach -1 (signed); identical bound checks
-// make the recursion equivalent.
-pub tor qsort { lo: i64, hi: i64 } -> i64
-qsort = if(lo < hi)
-| then |> pstep(i: lo, j: hi, pivot: arr_s[@as(usize, @intCast(@divTrunc(hi + lo, 2)))]): p
-    |> if(p.j > lo)
-        | then |> qsort(lo, hi: p.j): _
-            |> if(p.i < hi)
-                | then |> qsort(lo: p.i, hi): _ -> 0
-                | else -> 0
-        | else |> if(p.i < hi)
-            | then |> qsort(lo: p.i, hi): _ -> 0
-            | else -> 0
-| else -> 0
-
-// prepare: fill data once via the LCG (next_int(1_000_000) per element)
+// prepare: data[i] = next_int(1_000_000) — LCG last = (last*3877+29573)
+// mod 139968 seeded 42; value = floor(last / 139968.0 * max)
 for(0..400000)
 ! each i |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/grid:stored { data_s[@as(usize, @intCast(i))]: @as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 1000000.0)) }
+    |> std/grid:stored { data[i].b: @as(i32, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 1000000.0)) }
 
-// one iteration: sample unsorted, copy, sort, sample sorted — LCG draws
-// interleave exactly like the reference run(). Written as an `! each` arm
-// body: `for`'s `| done` continuation only resumes inside a flow arm —
-// a tor body's `|` continuations belong to the tor.
+// warmup — 10 iterations on the continuing stream. Per iteration:
+// sample, copy+count, prefix, scatter lo, scatter hi, sample.
 for(0..10)
 ! each it |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/store:stored { st.acc: @rem(st.acc + data_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
+    |> std/store:stored { st.acc: @rem(st.acc + data[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].b, 4294967296) }
     |> for(0..400000)
-        ! each i |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: data_s[@as(usize, @intCast(i))] }
-    | done |> qsort(lo: 0, hi: 399999): _
+        ! each i |> idv32(v: data_s[@as(usize, @intCast(i))]): v
+            |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: v }
+            |> idv32(v: h_lo[@as(usize, @intCast(v & 65535))]): c1
+            |> std/grid:stored { h_lo[@as(usize, @intCast(v & 65535))]: c1 + 1 }
+            |> idv32(v: h_hi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]): c2
+            |> std/grid:stored { h_hi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]: c2 + 1 }
+    | done |> presum(k: 0, rlo: 0, rhi: 0): _
+        |> scat-lo(i: 0): _
+        |> scat-hi(i: 0): _
         |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-        |> std/store:stored { st.acc: @rem(st.acc + arr_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
+        |> std/store:stored { st.acc: @rem(st.acc + arr[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].v, 4294967296) }
 
 // Helper.reset — measured iterations sample a fresh stream seeded at 42
 std/store:stored { st.last: 42 }
 
 for(0..50)
 ! each it |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/store:stored { st.acc: @rem(st.acc + data_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
+    |> std/store:stored { st.acc: @rem(st.acc + data[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].b, 4294967296) }
     |> for(0..400000)
-        ! each i |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: data_s[@as(usize, @intCast(i))] }
-    | done |> qsort(lo: 0, hi: 399999): _
+        ! each i |> idv32(v: data_s[@as(usize, @intCast(i))]): v
+            |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: v }
+            |> idv32(v: h_lo[@as(usize, @intCast(v & 65535))]): c1
+            |> std/grid:stored { h_lo[@as(usize, @intCast(v & 65535))]: c1 + 1 }
+            |> idv32(v: h_hi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]): c2
+            |> std/grid:stored { h_hi[@as(usize, @intCast((v >> @as(u5, 16)) + 32768))]: c2 + 1 }
+    | done |> presum(k: 0, rlo: 0, rhi: 0): _
+        |> scat-lo(i: 0): _
+        |> scat-hi(i: 0): _
         |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-        |> std/store:stored { st.acc: @rem(st.acc + arr_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
+        |> std/store:stored { st.acc: @rem(st.acc + arr[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].v, 4294967296) }
 
 std/io:print.ln("{{ st.acc:d }}")
