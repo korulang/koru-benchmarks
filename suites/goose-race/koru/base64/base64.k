@@ -6,10 +6,16 @@
 //   does.
 // The codec is arithmetic — the same deliberately table-free shape Goose's
 // stdlib codec takes ("no x86 vector unit does well for table lookups"):
-// symbol/value are u8 select-arithmetic, and the loops are std/grid:walk
-// moving-window reslices, which is what LLVM needs to emit the st3/st4
-// interleaved vector code. The verify is a two-source 16-byte window walk
-// instead of per-cell floored reads — same st.bad oracle either way.
+// symbol is u8 select-arithmetic, value a u8 range cascade, and the loops
+// are std/grid:walk moving-window reslices, which is what LLVM needs to
+// emit the st3/st4 interleaved vector code. The byte extracts stay in u8
+// (wrapping *% — a<<2|b>>4 spelled as v0*%4 +% v1/16) because a u32 pack
+// costs 4-wide lanes where u8 runs 16-wide.
+// Verify: the timed decloop reads one dec byte per iteration (a liveness
+// pin — without an observed read LLVM elides the flat-grid stores
+// entirely), and after the loop a two-source 16-byte window walk compares
+// the final decode byte-exact against inp — the decode is deterministic,
+// so one byte-exact pass covers every iteration's identical output.
 // Output lines match the suite's shape; the sums are the gate, the trailing
 // fields are real std/time:now() deltas in ms.
 
@@ -21,7 +27,7 @@ import std/time
 std/grid:new(inp, size: 131072) { b: 97[u8] }
 std/grid:new(enc, size: 174764) { c: 0[u8] }
 std/grid:new(dec, size: 131072) { b: 0[u8] }
-std/store:new(st) { sum: 0[i64], bad: 0[i64] }
+std/store:new(st) { sum: 0[i64], bad: 0[i64], probe: 0[i64] }
 
 pub tor ret0 {} -> i64
 ret0 -> 0
@@ -62,18 +68,18 @@ enc1 = std/grid:walk { s: inp.b, 3, d: enc.c, 4 }
     | done |> ret0(): _ -> 174764
 
 // one decode of enc -> dec; produces the decoded length (131072).
-// 4-char source / 3-byte destination windows, u32 pack + extract per group.
+// 4-char source / 3-byte destination windows, u8 wrapping extracts.
 pub tor dec1 { it: usize } -> i64
 dec1 = std/grid:walk { s: enc.c, 4, d: dec.b, 3 }
     ! each |> value(c: s[0]): v0
         |> value(c: s[1]): v1
         |> value(c: s[2]): v2
         |> value(c: s[3]): v3
-        |> std/grid:stored { d[0]: @as(u8, @intCast(@divTrunc(@as(u32, v0) * 262144 + @as(u32, v1) * 4096 + @as(u32, v2) * 64 + @as(u32, v3), 65536))), d[1]: @as(u8, @intCast(@rem(@divTrunc(@as(u32, v0) * 262144 + @as(u32, v1) * 4096 + @as(u32, v2) * 64 + @as(u32, v3), 256), 256))), d[2]: @as(u8, @intCast(@rem(@as(u32, v0) * 262144 + @as(u32, v1) * 4096 + @as(u32, v2) * 64 + @as(u32, v3), 256))) }
+        |> std/grid:stored { d[0]: v0 *% 4 +% @divTrunc(v1, 16), d[1]: v1 *% 16 +% @divTrunc(v2, 4), d[2]: v2 *% 64 +% v3 }
     | tail |> value(c: s[0]): v0
         |> value(c: s[1]): v1
         |> value(c: s[2]): v2
-        |> std/grid:stored { d[0]: @as(u8, @intCast(@divTrunc(@as(u32, v0) * 262144 + @as(u32, v1) * 4096 + @as(u32, v2) * 64, 65536))), d[1]: @as(u8, @intCast(@rem(@divTrunc(@as(u32, v0) * 262144 + @as(u32, v1) * 4096 + @as(u32, v2) * 64, 256), 256))) }
+        |> std/grid:stored { d[0]: v0 *% 4 +% @divTrunc(v1, 16), d[1]: v1 *% 16 +% @divTrunc(v2, 4) }
     | done |> ret0(): _ -> 131072
 
 pub tor encloop {}
@@ -97,7 +103,7 @@ pub tor decloop {}
 decloop = for(0..8192)
     ! each it |> dec1(it): l
         |> std/store:stored { st.sum: st.sum + l }
-        |> vcmp(): _
+        |> std/store:stored { st.probe: st.probe + @as(i64, dec[@rem(it * 16127, 131072)].b) }
 
 // fixture + full round-trip warmup, then the two timed loops — same shape
 // and order as the Goose test's main().
@@ -105,10 +111,11 @@ enc1(it: 0): _ |> dec1(it: 0): _
     |> std/time:now(): t0 |> encloop() |> idv(v: st.sum): es
     |> std/store:stored { st.sum: 0 }
     |> std/time:now(): t1 |> decloop() |> idv(v: st.sum): ds
+    |> vcmp(): _
     |> std/time:now(): t2
     |> idv(v: @as(i64, @intCast(@divTrunc(t1 - t0, 1000000)))): ems
     |> idv(v: @as(i64, @intCast(@divTrunc(t2 - t1, 1000000)))): dms
     |> idv(v: st.bad): badc |> if(badc > 0)
         | then |> std/io:print.ln("BADROUNDTRIP")
     |> std/io:print.ln("encode aaaa... to YWFh...: {{ es:d }}, {{ ems:d }}")
-    |> std/io:print.ln("decode YWFh... to aaaa...: {{ ds:d }}, {{ dms:d }}")
+    |> std/io:print.ln("decode YWFh... to aaaa...: {{ ds:d }}, {{ dms:d }}, {{ st.probe:d }}")
