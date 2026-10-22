@@ -3,10 +3,33 @@
 // 936 runs; per run: Jaro similarity of each pair, floor(val*1000)
 // saturating-added to result_val — oracle 567348912).
 //
-// String lens are nextInt(50)+4 → 4..53, alphabet "abcdefghij";
-// m1/m2 flag grids reuse the reference's [1024]bool scratch shape.
-// match_dist = max(len)/2 - 1 clamped >= 0; the transposition pass
-// walks s2's matched flags with a monotone cursor k.
+// String lens are nextInt(50)+4 → 4..53, alphabet "abcdefghij".
+// match_dist = max(len)/2 - 1 clamped >= 0.
+//
+// WAVE-5 — bitset rewrite (faithfulness notes):
+// The Rust reference scans each i's match window scalar
+// (for j in start..=end, first !s2_matches[j] && s2[j]==s1[i] wins,
+// break). Since len<=53<64 and the alphabet is 10 chars, s2's
+// per-char position masks fit one i64 each (cm[10], rebuilt per
+// pair): cand = cm[s1[i]] & unmatched & window[i], and cand's
+// LOWEST set bit IS the reference's first-j-in-scan-order match —
+// bit-identical semantics, not an approximation. The transposition
+// pass's k-cursor over s2 matched flags is likewise the iterated
+// lowest remaining bit of the matched mask; the reference's
+// `k < len2` guard can never fire (matched counts on both sides
+// are equal and consumed in order), so dropping it preserves the
+// result on every input. m1m/m2m replace the [1024]bool flag
+// scratch with two register-carried masks. jm packs m*64+tr
+// (m,tr<=53) so the transposition result flows back without a
+// store round-trip.
+//
+// Falsified hypotheses logged in this header's lineage:
+// - wave-4 (param-carried scan state + slices over [1024]bool
+//   flag grids) landed the file at ~1.13-1.17x vs Rust's 0.938s
+//   measured window — the scalar window scan itself was the cost.
+// - Rust's own whole-process (prepare+warmup+780 measured) is
+//   ~1.14s on this box vs our prior whole-process 1.13s; the
+//   residual board gap was basis + kernel, both addressed here.
 //
 import std/io
 import std/grid
@@ -15,21 +38,19 @@ import std/fmt
 
 std/grid:new(strb, size: 108000) { b: 0[u8] }
 std/grid:new(pr, size: 1000) { o1: 0[i64], l1: 0[i64], o2: 0[i64], l2: 0[i64] }
-std/grid:new(m1, size: 54) { v: 0[i64] }
-std/grid:new(m2, size: 54) { v: 0[i64] }
+std/grid:new(cm, size: 10) { v: 0[i64] }
 std/grid:slice(strb_s) { strb.b }
 std/grid:slice(o1_s) { pr.o1 }
 std/grid:slice(l1_s) { pr.l1 }
 std/grid:slice(o2_s) { pr.o2 }
 std/grid:slice(l2_s) { pr.l2 }
-std/grid:slice(m1_s) { m1.v }
-std/grid:slice(m2_s) { m2.v }
+std/grid:slice(cm_s) { cm.v }
 
 pub tor idv { v: i64 } -> i64
 idv = if(0 == 0)
 | then -> v
 | else -> v
-std/store:new(st) { last: 42[i64], res: 0[i64], off: 0[i64], md: 0[i64], m: 0[i64], k: 0[i64], tr: 0[i64], ws: 0[i64], we: 0[i64] }
+std/store:new(st) { last: 42[i64], res: 0[i64], off: 0[i64] }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
@@ -72,74 +93,66 @@ genp = if(p < 1000)
     |> genp(p: p + 1): r -> r
 | else -> 0
 
-// clrm — reset both match-flag rows
-pub tor clrm { i: i64 } -> i64
-clrm = if(i < 54)
-| then |> std/grid:stored { m1_s[@as(usize, @intCast(i))]: 0 }
-    |> std/grid:stored { m2_s[@as(usize, @intCast(i))]: 0 }
-    |> clrm(i: i + 1): r -> r
+// clrc — zero the 10 per-char position masks of s2
+pub tor clrc { i: i64 } -> i64
+clrc = if(i < 10)
+| then |> std/grid:stored { cm_s[@as(usize, @intCast(i))]: 0 }
+    |> clrc(i: i + 1): r -> r
 | else -> 0
 
-// jsc — scan s1[i]'s match window [j..we]; first unmatched equal
-// char wins (reference breaks out of the scan). Produces running m.
-pub tor jsc { a: i64, ob: i64, i: i64, j: i64, we: i64, m: i64 } -> i64
-jsc = if(j <= we)
-| then |> if(m2_s[@as(usize, @intCast(j))] == 0)
-        | then |> if(strb_s[@as(usize, @intCast(a + i))] == strb_s[@as(usize, @intCast(ob + j))])
-            | then |> std/grid:stored { m1_s[@as(usize, @intCast(i))]: 1 }
-                |> std/grid:stored { m2_s[@as(usize, @intCast(j))]: 1 }
-                |> ret0(): _ -> m + 1
-            | else |> jsc(a, ob, i, j: j + 1, we, m): r -> r
-        | else |> jsc(a, ob, i, j: j + 1, we, m): r -> r
-| else -> m
+// bld — build cm[c] = bitmask of s2 positions holding char 97+c
+pub tor bld { ob: i64, l2: i64, j: i64 } -> i64
+bld = if(j < l2)
+| then |> idv(v: @as(i64, strb_s[@as(usize, @intCast(ob + j))]) - 97): c
+    |> std/grid:stored { cm_s[@as(usize, @intCast(c))]: cm_s[@as(usize, @intCast(c))] | (@as(i64, 1) << @as(u6, @intCast(j))) }
+    |> bld(ob, l2, j: j + 1): r -> r
+| else -> 0
 
-// jm1 — match pass over s1 positions; ws/we bound per i, m threads
-// through as a param. Produces final m.
-pub tor jm1 { a: i64, ob: i64, l1: i64, l2: i64, md: i64, i: i64, m: i64 } -> i64
-jm1 = if(i < l1)
+// jm — match pass: for each i, cand = positions of s1[i]'s char in
+// s2, still unmatched, inside window [ws..we]. cand's lowest set
+// bit is the reference's first-match-in-scan-order. Produces
+// m*64 + tr (tr via trb) so both masks stay register-carried.
+pub tor jm { a: i64, ob: i64, l1: i64, l2: i64, md: i64, full: i64, i: i64, unm: i64, m1m: i64, m: i64 } -> i64
+jm = if(i < l1)
 | then |> idv(v: if(i > md) i - md else 0): ws
     |> idv(v: if(i + md < l2 - 1) i + md else l2 - 1): we
-    |> jsc(a, ob, i, j: ws, we, m): m2
-    |> jm1(a, ob, l1, l2, md, i: i + 1, m: m2): r -> r
-| else -> m
+    |> idv(v: ((@as(i64, 1) << @as(u6, @intCast(we - ws + 1))) - 1) << @as(u6, @intCast(ws))): win
+    |> idv(v: cm_s[@as(usize, @intCast(@as(i64, strb_s[@as(usize, @intCast(a + i))]) - 97))] & unm & win): cand
+    |> if(cand != 0)
+        | then |> jm(a, ob, l1, l2, md, full, i: i + 1, unm: unm ^ (cand & (0 - cand)), m1m: m1m | (@as(i64, 1) << @as(u6, @intCast(i))), m: m + 1): r -> r
+        | else |> jm(a, ob, l1, l2, md, full, i: i + 1, unm, m1m, m): r -> r
+| else |> if(m > 0)
+    | then |> trb(a, ob, m1m, m2m: full ^ unm, tr: 0): tr -> m * 64 + tr
+    | else -> 0
 
-// trp — transposition pass: k walks s2's matched flags; each matched
-// s1[i] is compared against s2[k] in match order. Produces tr.
-pub tor trp { a: i64, ob: i64, l1: i64, l2: i64, i: i64, k: i64, tr: i64 } -> i64
-trp = if(i < l1)
-| then |> if(m1_s[@as(usize, @intCast(i))] == 1)
-        | then |> kadv(l2, k): k2
-            |> if(k2 < l2)
-                | then |> if(strb_s[@as(usize, @intCast(a + i))] == strb_s[@as(usize, @intCast(ob + k2))])
-                    | then |> trp(a, ob, l1, l2, i: i + 1, k: k2 + 1, tr): r -> r
-                    | else |> trp(a, ob, l1, l2, i: i + 1, k: k2 + 1, tr: tr + 1): r -> r
-                | else |> trp(a, ob, l1, l2, i: i + 1, k: k2, tr): r -> r
-        | else |> trp(a, ob, l1, l2, i: i + 1, k, tr): r -> r
+// trb — transposition pass: bit i of m1m (lowest first) pairs with
+// the lowest remaining bit of m2m — the reference's monotone
+// k-cursor over s2 matched flags. tr counts char mismatches.
+pub tor trb { a: i64, ob: i64, m1m: i64, m2m: i64, tr: i64 } -> i64
+trb = if(m1m != 0)
+| then |> idv(v: @as(i64, @intCast(@ctz(@as(u64, @bitCast(m1m)))))): i
+    |> idv(v: @as(i64, @intCast(@ctz(@as(u64, @bitCast(m2m)))))): k
+    |> if(strb_s[@as(usize, @intCast(a + i))] == strb_s[@as(usize, @intCast(ob + k))])
+        | then |> trb(a, ob, m1m: m1m & (m1m - 1), m2m: m2m & (m2m - 1), tr): r -> r
+        | else |> trb(a, ob, m1m: m1m & (m1m - 1), m2m: m2m & (m2m - 1), tr: tr + 1): r -> r
 | else -> tr
 
-// kadv — advance k past unmatched s2 flags; produces k
-pub tor kadv { l2: i64, k: i64 } -> i64
-kadv = if(k < l2)
-| then |> if(m2_s[@as(usize, @intCast(k))] == 0)
-    | then |> kadv(l2, k: k + 1): r -> r
-    | else |> ret0(): _ -> k
-| else -> k
-
-// jpair — one pair's Jaro score: match pass, transposition pass,
-// (m/l1 + m/l2 + (m-tr)/m)/3 * 1000 floored into st.res
+// jpair — one pair's Jaro score: build s2 char masks, match pass,
+// transposition pass, (m/l1 + m/l2 + (m-tr)/m)/3 * 1000 floored
+// into st.res. pk = m*64+tr; pk>0 iff m>0.
 pub tor jpair { p: i64 } -> i64
 jpair = if(p < 1000)
-| then |> clrm(i: 0): _
+| then |> clrc(i: 0): _
     |> idv(v: l1_s[@as(usize, @intCast(p))]): l1
     |> idv(v: l2_s[@as(usize, @intCast(p))]): l2
     |> idv(v: o1_s[@as(usize, @intCast(p))]): a
     |> idv(v: o2_s[@as(usize, @intCast(p))]): ob
     |> idv(v: if(l1 > l2) @divTrunc(l1, 2) - 1 else @divTrunc(l2, 2) - 1): md0
     |> idv(v: if(md0 < 0) 0 else md0): md
-    |> jm1(a, ob, l1, l2, md, i: 0, m: 0): m
-    |> if(m > 0)
-        | then |> trp(a, ob, l1, l2, i: 0, k: 0, tr: 0): tr
-            |> std/store:stored { st.res: st.res + @as(i64, @intFromFloat(@floor((@as(f64, @floatFromInt(m)) / @as(f64, @floatFromInt(l1)) + @as(f64, @floatFromInt(m)) / @as(f64, @floatFromInt(l2)) + (@as(f64, @floatFromInt(m)) - @as(f64, @floatFromInt(@divTrunc(tr, 2)))) / @as(f64, @floatFromInt(m))) / 3.0 * 1000.0))) }
+    |> bld(ob, l2, j: 0): _
+    |> jm(a, ob, l1, l2, md, full: (@as(i64, 1) << @as(u6, @intCast(l2))) - 1, i: 0, unm: (@as(i64, 1) << @as(u6, @intCast(l2))) - 1, m1m: 0, m: 0): pk
+    |> if(pk > 0)
+        | then |> std/store:stored { st.res: st.res + @as(i64, @intFromFloat(@floor((@as(f64, @floatFromInt(@divTrunc(pk, 64))) / @as(f64, @floatFromInt(l1)) + @as(f64, @floatFromInt(@divTrunc(pk, 64))) / @as(f64, @floatFromInt(l2)) + (@as(f64, @floatFromInt(@divTrunc(pk, 64))) - @as(f64, @floatFromInt(@divTrunc(@rem(pk, 64), 2)))) / @as(f64, @floatFromInt(@divTrunc(pk, 64)))) / 3.0 * 1000.0))) }
         | else |> ret0(): _
     |> jpair(p: p + 1): r -> r
 | else -> 0
