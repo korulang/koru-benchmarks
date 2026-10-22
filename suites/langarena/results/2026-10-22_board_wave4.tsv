@@ -1,0 +1,55 @@
+# LangArena board 2026-10-22 wave-4 — koru whole-process ReleaseFast
+# min-of-3 (warmup+startup included) vs rust max-perf internal Instant
+# window min-of-3 (warmup excluded). All 47 checksums green this sweep.
+# geomean 0.507x; 36 ahead, 11 behind; max deficit 1.46x.
+# bfr floors at 0.004s (~4ms instrumented, time -p reads 0.00).
+# NB: spectralnorm + matmul_single are proven per-iteration parity —
+# their ratios are the warmup/setup basis artifact, not kernel work.
+task	koru_s	rust_s	ratio
+base64_decode	0.3000	0.276	1.087
+base64_encode	0.3200	0.258	1.240
+binarytrees_arena	0.1100	0.282	0.390
+binarytrees_obj	0.7100	1.367	0.519
+brainfuck_array	0.7500	1.123	0.668
+brainfuck_recursion	0.0040	1.148	0.003
+calculator_ast	0.1200	0.428	0.280
+calculator_interpreter	0.4500	0.553	0.814
+clbg_fannkuchredux	0.4200	0.976	0.430
+clbg_mandelbrot	0.1200	0.931	0.129
+clbg_nbody	0.6500	0.829	0.784
+clbg_spectralnorm	0.8000	0.689	1.161
+compress_arith_decode	0.9800	1.169	0.838
+compress_arith_encode	0.7900	0.896	0.882
+compress_bwt_decode	1.3600	0.972	1.399
+compress_bwt_encode	0.4600	0.322	1.429
+compress_huff_decode	1.0700	0.733	1.460
+compress_huff_encode	0.7600	0.771	0.986
+compress_lzw_decode	0.5600	0.570	0.982
+compress_lzw_encode	0.1000	0.533	0.188
+csv_parse	0.3800	0.679	0.560
+distance_jaro	1.1000	0.938	1.173
+distance_ngram	0.0300	0.402	0.075
+etc_cache_simulation	0.0700	0.791	0.088
+etc_gameoflife	0.3400	0.950	0.358
+etc_logparser	0.3300	0.310	1.065
+etc_neural_net	0.7400	0.861	0.859
+etc_sieve	0.8600	0.945	0.910
+etc_text_raytracer	0.2900	0.459	0.632
+etc_words	0.3900	0.675	0.578
+graph_astar	0.4400	0.343	1.283
+graph_bfs	0.5300	0.646	0.820
+graph_dfs	0.3400	0.719	0.473
+hash_crc32	0.1600	0.357	0.448
+hash_sha256	0.5300	0.929	0.571
+json_generate	0.0200	0.212	0.094
+json_parse_dom	0.1000	0.482	0.207
+json_parse_mapping	0.1900	0.345	0.551
+matmul_single	6.8100	5.949	1.145
+maze_astar	0.3900	0.543	0.718
+maze_bfs	0.2300	0.456	0.504
+maze_generator	0.2100	0.566	0.371
+sort_merge	1.1100	1.292	0.859
+sort_quick	1.2400	1.060	1.170
+sort_self	0.0700	0.257	0.272
+template_parse	0.5100	0.811	0.629
+template_regex	0.8700	3.021	0.288
