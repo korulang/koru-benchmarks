@@ -218,3 +218,15 @@ inner self-loop (params xi..mi, loaded once, stored once) — LLVM
 cannot prove `bd[i]` disjoint from `bd[j]`, so it round-trips the
 self-fields per pair unless you carry them. Rust's `split_at_mut`
 gives the proof; params give the residency.
+
+### Falsified: a LUT can lose to a predicted branch ladder
+
+`base64_encode` swapped the `b64ch` compare ladder for a 64-byte
+alphabet table — the reference's own spelling — and went 0.32s →
+0.95s. On the actual data (uniform input bytes) the ladder's same
+arm fires every iteration: perfectly predicted, ~free. The LUT is a
+*dependent load* feeding the output store — ~1ns per byte on the
+critical path, which on a billion-group loop is the whole
+regression. Tables buy when the branch is unpredictable or the
+ladder is long; when the input distribution collapses the branch
+predictor, arithmetic beats indexing.
