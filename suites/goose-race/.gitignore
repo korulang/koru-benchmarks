@@ -11,7 +11,5 @@
 **/program.ast.json
 **/koru_runtime
 # locally-built race binaries
-base64_koru
-bf_koru*
-json_koru
-primes_koru
+*_koru*
+build/
