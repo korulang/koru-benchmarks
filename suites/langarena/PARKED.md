@@ -159,3 +159,17 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     mechanism as #17 — `idv(v: if c1 (if c2 x else y) else z)` puts a
     second `blk:` inside the first. Flatten to two separate bound
     if-expression binds.
+
+19. **Stacked `[...]` annotations silently drop the grid.** A flow site
+    spelled `[unsafe(bounds)][layout(row)]` parses both annotations but
+    `collectIn` scans only one — the grid never registers and
+    `grid:stored` downstream fails with "does not address a grid cell"
+    (KORU161). Each annotation works alone. Either support multiple
+    annotations per site or refuse the second loudly. (clbg_nbody
+    contestant, 2026-10-22)
+
+20. **No mid-chain value-binding step.** `|> expr: name` is refused
+    (KORU103); the only spelling for a register-resident local inside a
+    chain is a `std/store` scratch row round-trip or `idv` tor bounce.
+    A bind step that stays in-registers would let loop-carried values
+    spell themselves without the store. (clbg_nbody contestant)

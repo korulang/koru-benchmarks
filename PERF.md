@@ -201,3 +201,20 @@ the stores/loads establish that all lanes are live. Pair every
 param-carry with the check: does disassembly show all the work?
 "Checksum green + faster" is not sufficient — the elided half of a
 computation is invisible to the oracle by definition.
+
+### Recipe 15: `[layout(row)]` — AoS when fields travel together
+
+A column grid (`{x: f64, y: f64, ...}`) forces a scalar load per field
+per row — in clbg_nbody that was ~45 instructions per interaction
+pair. Declaring `[layout(row)]` on the grid (regression 697_010 pins
+observational identity) packs a body's fields into one record: one
+`ldur` loads a pair, `fsub.2d` computes both deltas — ~29
+instrs/pair, and SLP packs further once unrolled. Rule: when the hot
+loop always touches *all* fields of a row together, row layout; when
+it touches *one* field across many rows, column layout + slice.
+
+Complement: register-carry the "self" record's fields across the
+inner self-loop (params xi..mi, loaded once, stored once) — LLVM
+cannot prove `bd[i]` disjoint from `bd[j]`, so it round-trips the
+self-fields per pair unless you carry them. Rust's `split_at_mut`
+gives the proof; params give the residency.

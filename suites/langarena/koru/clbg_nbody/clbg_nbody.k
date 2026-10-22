@@ -14,12 +14,35 @@
 // computes mag = dt / (d*d*d) with d = sqrt(...) — three multiplies,
 // reproduced literally since the roundings differ from d/sqrt forms.
 //
+// LAYOUT: `[layout(row)]` — one record per body (the reference's
+// `struct Planet` array-of-structs). Observational identity of the two
+// layouts is pinned by regression 697_010; row is the declaration whose
+// reads place a body's x,y,z and vx,vy,vz in one cache line, which is
+// what lets the emitted pair loop carry the same paired loads the
+// reference's codegen gets. No slice borrow: a row grid has no column
+// array to borrow, and the __koru_at floor on i/j folds away anyway —
+// the i-loop constructs 0..5 and j derives from it.
+//
+// RESIDENCY: body i's position, mass and accumulating velocity ride the
+// pl self-loop's parameters (xi..mi) — loaded once by movi, stored once
+// when the j-loop closes. Rust gets the same residency for free through
+// split_at_mut's disjoint-borrow proof; a plain grid cell cannot prove
+// bd[i].vx disjoint from bd[j].vx to the optimizer, so the parameters
+// spell it. The update ORDER is unchanged (per-j fsub accumulation, then
+// position advance with the final velocity) — bit-identical, verified
+// against expected.txt.
+//
+// fs remains store scratch for the per-pair intermediates: the emitted
+// inner loop shows LLVM promotes every fs.* read/write to registers, so
+// the scratch is free and keeping it keeps the source's pairing order
+// readable (dx..b2m all land before either velocity is touched).
+
 import std/io
 import std/grid
 import std/store
 import std/fmt
 
-std/grid:new(bd, size: 5) { x: 0.0[f64], y: 0.0[f64], z: 0.0[f64], vx: 0.0[f64], vy: 0.0[f64], vz: 0.0[f64], m: 0.0[f64] }
+[layout(row)]std/grid:new(bd, size: 5) { x: 0.0[f64], y: 0.0[f64], z: 0.0[f64], vx: 0.0[f64], vy: 0.0[f64], vz: 0.0[f64], m: 0.0[f64] }
 std/store:new(st) { t3: 0[i64], acc: 0[i64] }
 std/store:new(fs) { e: 0.0[f64], v1: 0.0[f64], dx: 0.0[f64], dy: 0.0[f64], dz: 0.0[f64], d: 0.0[f64], mg: 0.0[f64], bm: 0.0[f64], b2m: 0.0[f64], px: 0.0[f64], py: 0.0[f64], pz: 0.0[f64] }
 
@@ -28,51 +51,61 @@ ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
 
-// pairw — one moveFromI pair interaction between bodies i and j:
-// velocity impulse on both. Store scratch is safe — no recursion
-// between set and use within this leaf tor.
-pub tor pairw { i: i64, j: i64 } -> i64
-pairw = std/store:stored { fs.dx: bd[i].x - bd[j].x }
-    |> std/store:stored { fs.dy: bd[i].y - bd[j].y }
-    |> std/store:stored { fs.dz: bd[i].z - bd[j].z }
+// pairw — one moveFromI pair interaction (i is implicit: its position
+// and mass arrive as the loop-invariant params xi..mi; its velocity
+// accumulates in the caller's self-loop registers). j's velocity is
+// written through to memory each iteration exactly as the reference's
+// b2 writes are — the values are consumed by no one mid-pass, but the
+// writes are the semantics.
+pub tor pairw { j: i64, xi: f64, yi: f64, zi: f64, mi: f64 } -> i64
+pairw = std/store:stored { fs.dx: xi - bd[j].x }
+    |> std/store:stored { fs.dy: yi - bd[j].y }
+    |> std/store:stored { fs.dz: zi - bd[j].z }
     |> std/store:stored { fs.d: @sqrt(fs.dx * fs.dx + fs.dy * fs.dy + fs.dz * fs.dz) }
     |> std/store:stored { fs.mg: 0.01 / (fs.d * fs.d * fs.d) }
-    |> std/store:stored { fs.bm: bd[i].m * fs.mg }
+    |> std/store:stored { fs.bm: mi * fs.mg }
     |> std/store:stored { fs.b2m: bd[j].m * fs.mg }
-    |> std/grid:stored { bd[i].vx: bd[i].vx - fs.dx * fs.b2m }
-    |> std/grid:stored { bd[i].vy: bd[i].vy - fs.dy * fs.b2m }
-    |> std/grid:stored { bd[i].vz: bd[i].vz - fs.dz * fs.b2m }
     |> std/grid:stored { bd[j].vx: bd[j].vx + fs.dx * fs.bm }
     |> std/grid:stored { bd[j].vy: bd[j].vy + fs.dy * fs.bm }
     |> std/grid:stored { bd[j].vz: bd[j].vz + fs.dz * fs.bm }
     |> ret0(): _ -> 0
 
-// pl — the j-loop inside moveFromI: pairs (i, j) for j = i+1..4
-pub tor pl { bi: i64, bj: i64 } -> i64
-pl = if(bj < 5)
-| then |> pairw(i: bi, j: bj): _
-    |> pl(bi, bj: bj + 1): r -> r
-| else -> 0
-
-// movi — moveFromI: pair pass for body i, then its position advance
-pub tor movi { i: i64 } -> i64
-movi = pl(bi: i, bj: i + 1): _
-    |> std/grid:stored { bd[i].x: bd[i].x + 0.01 * bd[i].vx }
-    |> std/grid:stored { bd[i].y: bd[i].y + 0.01 * bd[i].vy }
-    |> std/grid:stored { bd[i].z: bd[i].z + 0.01 * bd[i].vz }
+// pl — the j-loop inside moveFromI: pairs (i, j) for j = i+1..4 with
+// i's velocity accumulating in vx/vy/vz. On close: i's velocity lands
+// once, then i's position advance uses the FINAL velocity — the same
+// sequencing as `self.vx -= …; self.x += dt * self.vx`.
+pub tor pl { i: i64, j: i64, xi: f64, yi: f64, zi: f64, vx: f64, vy: f64, vz: f64, mi: f64 } -> i64
+pl = if(j < 5)
+| then |> pairw(j, xi, yi, zi, mi): _
+    |> pl(i, j: j + 1, xi, yi, zi, vx: vx - fs.dx * fs.b2m, vy: vy - fs.dy * fs.b2m, vz: vz - fs.dz * fs.b2m, mi): r -> r
+| else |> std/grid:stored { bd[i].vx: vx, bd[i].vy: vy, bd[i].vz: vz, bd[i].x: xi + 0.01 * vx, bd[i].y: yi + 0.01 * vy, bd[i].z: zi + 0.01 * vz }
     |> ret0(): _ -> 0
 
-// stepi — the i-loop of one integration step
-pub tor stepi { i: i64 } -> i64
-stepi = if(i < 5)
-| then |> movi(i): _
-    |> stepi(i: i + 1): r -> r
-| else -> 0
+// movi — moveFromI: load body i's state once, run its pair pass; the
+// loop itself writes the velocities back and advances the position.
+pub tor movi { i: i64 } -> i64
+movi = pl(i, j: i + 1, xi: bd[i].x, yi: bd[i].y, zi: bd[i].z, vx: bd[i].vx, vy: bd[i].vy, vz: bd[i].vz, mi: bd[i].m): _
+    |> ret0(): _ -> 0
+
+// step — one integration step. The five bodies are comptime-known, so
+// the i-loop is written as five literal calls: every address inside the
+// inlined pair loops becomes a constant, the j self-loops have constant
+// trip counts (4,3,2,1,0 iterations — i=4's closes immediately), and
+// LLVM schedules the whole step as straight-line code. Identical pair
+// sequence and order as the reference's `while i < nbodies` — it is the
+// same work with the induction spelled at the call site.
+pub tor step { } -> i64
+step = movi(i: 0): _
+    |> movi(i: 1): _
+    |> movi(i: 2): _
+    |> movi(i: 3): _
+    |> movi(i: 4): _
+    |> ret0(): _ -> 0
 
 // runn — one run = 1000 steps
 pub tor runn { n: i64 } -> i64
 runn = if(n < 1000)
-| then |> stepi(i: 0): _
+| then |> step(): _
     |> runn(n: n + 1): r -> r
 | else -> 0
 
