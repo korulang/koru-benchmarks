@@ -173,3 +173,15 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     chain is a `std/store` scratch row round-trip or `idv` tor bounce.
     A bind step that stays in-registers would let loop-carried values
     spell themselves without the store. (clbg_nbody contestant)
+
+21. **store:stored emits a non-inline handler + field-enum dispatch per
+    write.** Every hot store-row update pays a call plus a switch on
+    the field tag (compress_arith_decode disasm, 2026-10-22). Emitting
+    the write as a direct `__koru_store_st.f = v` (or making the
+    handler `pub inline`) would keep store rows cheap for state that
+    can't param-carry. Contestant proposal, judged worth fixing.
+
+22. **No certified-unchecked read on plain `grid[i]`.** Programs that
+    can't use `std/grid:slice` still pay `__koru_at` panic-path reads
+    per access. A `0[grid]`-style certified index or documented
+    unchecked-read spelling would close it. (arith_decode contestant)
