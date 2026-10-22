@@ -222,3 +222,13 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     per-pixel data had to be spelled as a flat f64 column + manual
     k*3 stride — a `std/grid:slice` variant that borrows row-structured
     records would express it directly. (text_raytracer contestant)
+
+33. **`std/grid:slice` on a certified-index field emits
+    `use of undeclared identifier '__koru_idx_cells'`** — the generated
+    slice type name is unqualified. Workaround: keep the grid
+    certified (writes pay the floor, reads raw). (maze_bfs contestant,
+    2026-10-22)
+
+34. **Certified u21 stores spill-reload** — `strh`/`ubfx`/`strb` bounce
+    (~7 instrs) in cold paths; a direct 3-byte store or insert-style
+    lowering would help swap-heavy code. (maze_bfs contestant)
