@@ -27,6 +27,12 @@ remaining legs are Linux CI + Lars's approval of the exact diff.
   For context only — the LangArena board's whole-process numbers remain
   the primary comparison; this task's Rust/Zig/C entries use SIMD
   codecs, so base64 is the protocol proof point, not the showcase.
+- `brainfuck/test.k` + `brainfuck/notify.kz` (same shim + a `putb`
+  raw-byte tor) verified end-to-end: `xtime.rb` bracket 0.718s,
+  `QUIET=1` checksum `23280` identical to `bf.rs` release (1.14s),
+  non-quiet output **byte-identical** to the reference, hello-world
+  verify gate 42059 through the real parse+interp path. The notify
+  shim is unchanged — `putb` is one more proc on the same module.
 
 ## Integration diff (draft, for the maintainer's tree)
 
@@ -60,8 +66,8 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) PATH=$(KORU_ZIG):$(PATH) \
    CWD; the Makefile wants `target/base64_koru`. Either `koruc -o`
    learns to name the executable, or the recipe moves `a.out` after
    build and cleans the emitted `*.zig`/`zig-out` litter. Cosmetic.
-4. **Task coverage.** base64 is the protocol proof point. Other tasks
-   (json, matmul, primes, brainfuck) want their own `test.k` drivers —
+4. **Task coverage.** base64 + brainfuck staged and proven. Other
+   tasks (json, matmul, primes) want their own `test.k` drivers —
    the LangArena kernels carry the algorithms; the drivers are
    per-suite-shape work, not new kernel work.
 5. **Disclosure text.** The submission must state plainly: static
