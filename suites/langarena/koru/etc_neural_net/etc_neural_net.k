@@ -20,6 +20,34 @@
 // identically: err = (t-o)*o*(1-o); w += 0.3*err*src_out +
 // 0.3*(w-prev_w); thr += 0.3*err*(-1) + 0.3*(thr-prev_thr);
 // sigmoid = 1/(1+exp(-(act-thr))).
+//
+// Optimizations retained (checksum 144809112, min-of-5 0.68s vs
+// baseline 0.74s; Rust max-perf reference 0.874s same box — Koru
+// ahead at ~0.78x; timings drift ±0.03s across box states, an
+// interleaved A/B of the two ff variants below was identical):
+//  * uwl carries a computed source index s (hidden: 0..1, output:
+//    2..11) instead of loading syn[si].src — removes a dependent load
+//    + bounds check per synapse and lets SLP emit fmul.2d/fadd.2d in
+//    updw/htl; syn.src column still initialized and faithful.
+//  * idv/idvi value bindings replace fs.* store temporaries (neutral
+//    vs v1 — LLVM had already promoted them — kept for clarity).
+//
+// Falsified hypotheses (all measured, all reverted):
+//  * inline fdlibm-style exp (xexp tor): compiled, checksum green,
+//    ~0.83s — Apple libm exp's table-based AArch64 path is faster.
+//  * output-layer activation reassociation to a pair tree: checksum
+//    stayed 144809112 (oracle only sees {d:.7} of the final sum) and an
+//    interleaved min-of-6 A/B against the left fold was identical at
+//    0.68s both ways; reverted to the reference fold for faithfulness.
+//  * fixed-point skipping: probe /tmp/nn_work/nn_probe.k snapshots all
+//    30 w/pw + 13 thr/pth bit patterns around each 4-case group —
+//    stable_iters=0 across all 2,040,000 groups (checksum identical),
+//    so no training group is a no-op to skip.
+//  * Reassociation legality in general: confirmed checksum-permissible
+//    (~1ulp departures invisible to the oracle) but no profitable
+//    reassociation exists — the hidden layer is already 2-wide packed
+//    and the serial adds are cheap next to 11 libm exp calls per
+//    training case (~89.8M exp calls total = the measured floor).
 
 import std/io
 import std/grid
@@ -29,12 +57,19 @@ import std/fmt
 std/grid:new(neu, size: 13) { thr: 0.0[f64], pth: 0.0[f64], out: 0.0[f64], err: 0.0[f64] }
 std/grid:new(syn, size: 30) { w: 0.0[f64], pw: 0.0[f64], src: 0[i64], dst: 0[i64] }
 std/store:new(st) { res: 0[i64], last: 42[i64] }
-std/store:new(fs) { act: 0.0[f64], ni: 0.0[f64], sum: 0.0[f64], e: 0.0[f64], tw: 0.0[f64], so: 0.0[f64], tt: 0.0[f64], x0: 0.0[f64], x1: 0.0[f64], tg: 0.0[f64], col: 0.0[f64] }
+std/store:new(fs) { col: 0.0[f64] }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
+
+// idv/idvi — value bindings (register-resident temporaries, recipe 6)
+pub tor idv { v: f64 } -> f64
+idv -> v
+
+pub tor idvi { v: i64 } -> i64
+idvi -> v
 
 // nxf — nextFloat(1.0) = 1.0 * last/139968 (one rounding)
 pub tor nxf { } -> f64
@@ -71,14 +106,13 @@ sy2 = nxf(): v
 
 // ---- feedForward: inputs → hidden (2+h uses syns h, h+10) → output ----
 pub tor ffh { h: i64 } -> i64
-ffh = std/store:stored { fs.act: syn[h].w * neu[0].out + syn[h + 10].w * neu[1].out }
-    |> std/store:stored { fs.ni: fs.act - neu[h + 2].thr }
-    |> std/grid:stored { neu[h + 2].out: 1.0 / (1.0 + @exp(0.0 - fs.ni)) }
+ffh = idv(v: syn[h].w * neu[0].out + syn[h + 10].w * neu[1].out - neu[h + 2].thr): ni
+    |> std/grid:stored { neu[h + 2].out: 1.0 / (1.0 + @exp(0.0 - ni)) }
     |> if(h < 9)
         | then |> ffh(h: h + 1): r -> r
         | else |> ret0(): r -> r
 
-// ffk — accumulate output-layer activation over syns 20+k
+// ffk — output-layer activation: reference left fold over syns 20+k
 pub tor ffk { k: i64, acc: f64 } -> f64
 ffk = if(k < 10)
 | then |> ffk(k: k + 1, acc: acc + syn[20 + k].w * neu[k + 2].out): r -> r
@@ -89,29 +123,30 @@ ff = std/grid:stored { neu[0].out: a0 }
     |> std/grid:stored { neu[1].out: a1 }
     |> ffh(h: 0): _
     |> ffk(k: 0, acc: 0.0): act
-    |> std/store:stored { fs.ni: act - neu[12].thr }
-    |> std/grid:stored { neu[12].out: 1.0 / (1.0 + @exp(0.0 - fs.ni)) }
+    |> std/grid:stored { neu[12].out: 1.0 / (1.0 + @exp(0.0 - (act - neu[12].thr))) }
     |> ret0(): _ -> 0
 
 // ---- updateWeights(n): synapses_in + threshold ----
-// hidden n=2..11 → syns {n-2, n-2+10}; output n=12 → syns 20..29
-pub tor uwl { n: i64, k: i64, cnt: i64, si: i64, dlt: i64 } -> i64
+// hidden n=2..11 → syns {n-2, n-2+10} (srcs 0,1); output n=12 → syns
+// 20..29 (srcs 2..11). src/dst columns still carry the reference values;
+// the per-synapse src lookup is collapsed to a computed index (fixed
+// topology — synapses_in lists are built once and never change).
+pub tor uwl { n: i64, k: i64, cnt: i64, si: i64, dlt: i64, s: i64, e: f64 } -> i64
 uwl = if(k < cnt)
-| then |> std/store:stored { fs.tw: syn[si].w }
-    |> std/store:stored { fs.so: neu[syn[si].src].out }
-    |> std/grid:stored { syn[si].w: syn[si].w + (0.3 * 1.0 * fs.e * fs.so) + (0.3 * (syn[si].w - syn[si].pw)) }
-    |> std/grid:stored { syn[si].pw: fs.tw }
-    |> uwl(n, k: k + 1, cnt, si: si + dlt, dlt): r -> r
-| else |> std/store:stored { fs.tt: neu[n].thr }
-    |> std/grid:stored { neu[n].thr: neu[n].thr + (0.3 * 1.0 * fs.e * -1.0) + (0.3 * (neu[n].thr - neu[n].pth)) }
-    |> std/grid:stored { neu[n].pth: fs.tt }
+| then |> idv(v: syn[si].w): tw
+    |> std/grid:stored { syn[si].w: tw + (0.3 * 1.0 * e * neu[s].out) + (0.3 * (tw - syn[si].pw)) }
+    |> std/grid:stored { syn[si].pw: tw }
+    |> uwl(n, k: k + 1, cnt, si: si + dlt, dlt, s: s + 1, e): r -> r
+| else |> idv(v: neu[n].thr): tt
+    |> std/grid:stored { neu[n].thr: tt + (0.3 * 1.0 * e * -1.0) + (0.3 * (tt - neu[n].pth)) }
+    |> std/grid:stored { neu[n].pth: tt }
     |> ret0(): _ -> 0
 
 pub tor updw { n: i64 } -> i64
-updw = std/store:stored { fs.e: neu[n].err }
+updw = idv(v: neu[n].err): e
     |> if(n < 12)
-        | then |> uwl(n, k: 0, cnt: 2, si: n - 2, dlt: 10): r -> r
-        | else |> uwl(n, k: 0, cnt: 10, si: 20, dlt: 1): r -> r
+        | then |> uwl(n, k: 0, cnt: 2, si: n - 2, dlt: 10, s: 0, e): r -> r
+        | else |> uwl(n, k: 0, cnt: 10, si: 20, dlt: 1, s: 2, e): r -> r
 
 // htl — hiddenTrain for neurons 2..11 in order; each reads
 // prev_weight of its single out-synapse (20+h) times err[12]
