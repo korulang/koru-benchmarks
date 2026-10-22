@@ -28,25 +28,29 @@ std/store:new(st) { acc: 0[i64], last: 42[i64] }
 // mcopy — temp[i] = arr[i] for i in left..right inclusive
 pub tor mcopy { i: i64, right: i64 } -> i64
 mcopy = if(i <= right)
-| then |> std/grid:stored { tbuf[i].v: arr[i].v }
+| then |> std/grid:stored { tbuf_s[@as(usize, @intCast(i))]: arr_s[@as(usize, @intCast(i))] }
     |> mcopy(i: i + 1, right): r -> r
 | else -> i
+
+std/grid:slice(arr_s) { arr.v }
+std/grid:slice(tbuf_s) { tbuf.v }
+std/grid:slice(data_s) { data.b }
 
 // mrun — the merge walk: while i <= mid and j <= right, take the smaller.
 // Returns the stopped cursors; k is derived (writes = i-left + j-mid-1).
 pub tor mrun { i: i64, j: i64, k: i64, mid: i64, right: i64 } -> { i: i64, j: i64 }
 mrun = if(i <= mid and j <= right)
-| then |> if(tbuf[i].v <= tbuf[j].v)
-        | then |> std/grid:stored { arr[k].v: tbuf[i].v }
+| then |> if(tbuf_s[@as(usize, @intCast(i))] <= tbuf_s[@as(usize, @intCast(j))])
+        | then |> std/grid:stored { arr_s[@as(usize, @intCast(k))]: tbuf_s[@as(usize, @intCast(i))] }
             |> mrun(i: i + 1, j, k: k + 1, mid, right): r -> r
-        | else |> std/grid:stored { arr[k].v: tbuf[j].v }
+        | else |> std/grid:stored { arr_s[@as(usize, @intCast(k))]: tbuf_s[@as(usize, @intCast(j))] }
             |> mrun(i, j: j + 1, k: k + 1, mid, right): r -> r
 | else -> { i, j }
 
 // mrest — drain the left-half remainder: while i <= mid, arr[k] = tbuf[i]
 pub tor mrest { i: i64, k: i64, mid: i64 } -> i64
 mrest = if(i <= mid)
-| then |> std/grid:stored { arr[k].v: tbuf[i].v }
+| then |> std/grid:stored { arr_s[@as(usize, @intCast(k))]: tbuf_s[@as(usize, @intCast(i))] }
     |> mrest(i: i + 1, k: k + 1, mid): r -> r
 | else -> i
 
@@ -67,7 +71,7 @@ msort = if(left < right)
 // prepare: fill data once via the LCG (next_int(1_000_000) per element)
 for(0..400000)
 ! each i |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/grid:stored { data[i].b: @as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 1000000.0)) }
+    |> std/grid:stored { data_s[@as(usize, @intCast(i))]: @as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 1000000.0)) }
 
 // warmup: 10 iterations on the continuing prepare stream. One iteration:
 // sample unsorted, copy, sort, sample sorted — LCG draws interleave
@@ -75,23 +79,23 @@ for(0..400000)
 // `for`'s `| done` continuation only resumes inside a flow arm.
 for(0..10)
 ! each it |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/store:stored { st.acc: @rem(st.acc + data[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].b, 4294967296) }
+    |> std/store:stored { st.acc: @rem(st.acc + data_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
     |> for(0..400000)
-        ! each i |> std/grid:stored { arr[i].v: data[i].b }
+        ! each i |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: data_s[@as(usize, @intCast(i))] }
     | done |> msort(left: 0, right: 399999): _
         |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-        |> std/store:stored { st.acc: @rem(st.acc + arr[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].v, 4294967296) }
+        |> std/store:stored { st.acc: @rem(st.acc + arr_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
 
 // Helper.reset — measured iterations sample a fresh stream seeded at 42
 std/store:stored { st.last: 42 }
 
 for(0..50)
 ! each it |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-    |> std/store:stored { st.acc: @rem(st.acc + data[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].b, 4294967296) }
+    |> std/store:stored { st.acc: @rem(st.acc + data_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
     |> for(0..400000)
-        ! each i |> std/grid:stored { arr[i].v: data[i].b }
+        ! each i |> std/grid:stored { arr_s[@as(usize, @intCast(i))]: data_s[@as(usize, @intCast(i))] }
     | done |> msort(left: 0, right: 399999): _
         |> std/store:stored { st.last: @rem(st.last *% 3877 +% 29573, 139968) }
-        |> std/store:stored { st.acc: @rem(st.acc + arr[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))].v, 4294967296) }
+        |> std/store:stored { st.acc: @rem(st.acc + arr_s[@as(usize, @intCast(@as(i64, @intFromFloat(@as(f64, @floatFromInt(st.last)) / 139968.0 * 400000.0))))], 4294967296) }
 
 std/io:print.ln("{{ st.acc:d }}")
