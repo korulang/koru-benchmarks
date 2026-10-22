@@ -2,10 +2,11 @@
 // (size=500000, iterations=4000, warmup_iterations=800 → 4800 checksum
 // accumulations, oracle 1329134018).
 //
-// Faithful port of reference/crystal/main.cr Base64::Decode:
+// Faithful port of reference/crystal/main.cr Base64::Decode (same contract
+// as the rust entry, which runs base64-simd's STANDARD.decode_to_vec):
 //   setup:    str2 = strict_encode("a" * 500000)   → 666668 bytes
-//   run:      str3 = decode(str2); result_val += str3.bytesize (u32 &+)
-//   checksum: DJB2("decode #{str2[0..3]}... to #{str3[0..3]}...: #{result_val}")
+//   run:      str3 = decode(str2); result_val += str3.len (u32 wrapping +)
+//   checksum: DJB2("decode #{str2[0..4]}... to #{str3[0..4]}...: #{result_val}")
 //
 // encoded "a"*500000 is "YWFh" x166666 + "YWE=" (last 2-byte group).
 // decoded len = 500000; result_val = 500000 * 4800 mod 2^32 = 2400000000.
@@ -19,13 +20,36 @@
 //   proven separately by base64_encode.
 // - Static u8 grids; the reference heap-allocates per run. Same bytes.
 // - The warmup/measured split is collapsed into one 4800-iteration loop.
-// - Reverse map is arithmetic on the ASCII byte, not a table.
-// - The tail group is written literally ('YWE=' → 2 bytes), matching
-//   Decoder.calcSizeForSlice semantics for a 2-byte final group.
-// - [unsafe(bounds)] is NOT waived.
+// - Reverse map is arithmetic on the ASCII byte (bound if-else select
+//   chain), not a table; '=' would map to 255 but is never passed in
+//   (the tail group reads only s[0..2]).
 //
+// Perf port (2026-10-22, vs the pre-walk-window version this replaces):
+// the old kernel read enc per-cell (enc[4*q+k].c — a floored access per
+// byte) and decoded through an if/else-if cascade (multi-predecessor
+// merges — SimplifyCFG can't fold them, they stay branchy and the
+// vectorizer declines). This version ports the goose-race base64 kernel's
+// measured recipes wholesale (PERF.md recipes 1/2/3/5/9):
+// - std/grid:walk { s: enc.c, 4, d: dec.b, 3 } moving windows — trip count
+//   min(666668/4, 500000/3) = 166666 full steps, then `| tail` gets the
+//   last 4-char group with a 2-byte d window ("YWE=" → 2 bytes).
+// - `value` is the bound two-way-if chain (u8) that folds to selects —
+//   identical table-free arithmetic to the goose-race kernel.
+// - byte extracts stay in u8 wrapping ops (v0*%4 +% v1/16) — 16-wide lanes.
+// - honest liveness (recipe 9): st.probe reads one real decoded byte per
+//   iteration and reaches the output gate; after the loop a 16-wide
+//   two-source walk verifies all 500000 decoded bytes against inp
+//   byte-exact (deterministic output → one pass covers every iteration)
+//   and st.probe is checked against its exact expected total (97*4800).
+//   Any mismatch prints BADROUNDTRIP instead of a checksum.
+// - enc init itself is a 4-wide walk writing the constant "YWFh" pattern.
+// Falsified here / carried over from PERF.md: nothing new — the recipes
+// applied unchanged; no hypothesis this kernel needed was falsified.
+// [unsafe(bounds)] is NOT waived.
+
 import std/io
 import std/grid
+import std/store
 
 pub tor djb2-byte { h: i64, b: i64 } -> i64
 djb2-byte -> @rem(h * 33 + b, 4294967296)
@@ -46,59 +70,79 @@ djb2-digits = if(n < 10)
 | then |> djb2-byte(h, b: 48 + n): r -> r
 | else |> djb2-digits(n: @divTrunc(n, 10), h): h2 |> djb2-byte(h: h2, b: 48 + @rem(n, 10)): r -> r
 
-// ASCII byte -> 6-bit base64 value
-pub tor b64val { c: i64 } -> i64
-b64val = if(c >= 97)
-| then -> c - 71
-| else |> if(c >= 65)
-    | then -> c - 65
-    | else |> if(c >= 48)
-        | then -> c + 4
-        | else |> if(c == 43)
-            | then -> 62
-            | else -> 63
+pub tor ret0 {} -> i64
+ret0 -> 0
 
-// "YWFh" repeating pattern byte for position i (i mod 4 → Y W F h)
-pub tor initch { i: i64 } -> i64
-initch = if(@rem(i, 4) == 0)
-| then -> 89
-| else |> if(@rem(i, 4) == 1)
-    | then -> 87
-    | else |> if(@rem(i, 4) == 2)
-        | then -> 70
-        | else -> 104
+pub tor idv { v: i64 } -> i64
+idv -> v
 
+pub tor idv8 { v: u8 } -> u8
+idv8 -> v
+
+// base64 char -> sextet (255 = not base64) — bound two-way-if chain:
+// each |> binds `const r = if (c) x else acc`, the shape SimplifyCFG folds
+// into chained selects (NEON bit/bsl); if/else-if ladders stay branchy.
+pub tor value { c: u8 } -> u8
+value = idv8(v: if (c == 47) @as(u8, 63) else 255): r4
+    |> idv8(v: if (c == 43) @as(u8, 62) else r4): r3
+    |> idv8(v: if (c >= 48 and c < 58) c +% 4 else r3): r2
+    |> idv8(v: if (c >= 65 and c < 91) c -% 65 else r2): r1
+    |> idv8(v: if (c >= 97 and c < 123) c -% 71 else r1): r -> r
+
+// one decode of enc -> dec; produces the decoded length (500000).
+// 4-char source / 3-byte destination windows; the last "YWE=" group lands
+// in tail with a 2-byte d window — 166666 full steps + 2 tail bytes.
+pub tor dec1 {} -> i64
+dec1 = std/grid:walk { s: enc.c, 4, d: dec.b, 3 }
+    ! each |> value(c: s[0]): v0
+        |> value(c: s[1]): v1
+        |> value(c: s[2]): v2
+        |> value(c: s[3]): v3
+        |> std/grid:stored { d[0]: v0 *% 4 +% @divTrunc(v1, 16), d[1]: v1 *% 16 +% @divTrunc(v2, 4), d[2]: v2 *% 64 +% v3 }
+    | tail |> value(c: s[0]): v0
+        |> value(c: s[1]): v1
+        |> value(c: s[2]): v2
+        |> std/grid:stored { d[0]: v0 *% 4 +% @divTrunc(v1, 16), d[1]: v1 *% 16 +% @divTrunc(v2, 4) }
+    | done |> ret0(): _ -> 500000
+
+// byte-exact verify of dec against inp — without a consumed read the
+// flat-grid stores are dead to LLVM. 16-byte two-source windows;
+// leftover bytes (500000 % 16 == 0, kept honest anyway) walk singly.
+pub tor vcmp {} -> i64
+vcmp = std/grid:walk { s: dec.b, 16, t: inp.b, 16 }
+    ! each |> std/store:stored { st.bad: st.bad + @as(i64, @intFromBool(s[0] != t[0])) + @as(i64, @intFromBool(s[1] != t[1])) + @as(i64, @intFromBool(s[2] != t[2])) + @as(i64, @intFromBool(s[3] != t[3])) + @as(i64, @intFromBool(s[4] != t[4])) + @as(i64, @intFromBool(s[5] != t[5])) + @as(i64, @intFromBool(s[6] != t[6])) + @as(i64, @intFromBool(s[7] != t[7])) + @as(i64, @intFromBool(s[8] != t[8])) + @as(i64, @intFromBool(s[9] != t[9])) + @as(i64, @intFromBool(s[10] != t[10])) + @as(i64, @intFromBool(s[11] != t[11])) + @as(i64, @intFromBool(s[12] != t[12])) + @as(i64, @intFromBool(s[13] != t[13])) + @as(i64, @intFromBool(s[14] != t[14])) + @as(i64, @intFromBool(s[15] != t[15])) }
+    | tail |> for(0..s.len)
+        ! each i |> if(s[i] != t[i])
+            | then |> std/store:stored { st.bad: st.bad + 1 }
+    | done |> ret0(): _ -> 0
+
+std/grid:new(inp, size: 500000) { b: 97[u8] }
 std/grid:new(enc, size: 666668) { c: 0[u8] }
 std/grid:new(dec, size: 500000) { b: 0[u8] }
+std/store:new(st) { bad: 0[i64], probe: 0[i64] }
 
-for(0..666668)
-! each i |> initch(i: @as(i64, @intCast(i))): c |> std/grid:stored { enc[i].c: @as(u8, @intCast(c)) }
-std/grid:stored { enc[666666].c: 69 }
-std/grid:stored { enc[666667].c: 61 }
-
-capture { acc: 0[i64] }
-! as g |> for(0..4800)
-    ! each it |> for(0..166666)
-        ! each q |> b64val(c: @as(i64, enc[4 * q].c)): v0
-            |> b64val(c: @as(i64, enc[4 * q + 1].c)): v1
-            |> b64val(c: @as(i64, enc[4 * q + 2].c)): v2
-            |> b64val(c: @as(i64, enc[4 * q + 3].c)): v3
-            |> std/grid:stored { dec[3 * q].b: @as(u8, @intCast(v0 * 4 + @divTrunc(v1, 16))) }
-            |> std/grid:stored { dec[3 * q + 1].b: @as(u8, @intCast(@rem(v1, 16) * 16 + @divTrunc(v2, 4))) }
-            |> std/grid:stored { dec[3 * q + 2].b: @as(u8, @intCast(@rem(v2, 4) * 64 + v3)) }
-        | done |> b64val(c: @as(i64, enc[666664].c)): t0
-            |> b64val(c: @as(i64, enc[666665].c)): t1
-            |> b64val(c: @as(i64, enc[666666].c)): t2
-            |> std/grid:stored { dec[499998].b: @as(u8, @intCast(t0 * 4 + @divTrunc(t1, 16))) }
-            |> std/grid:stored { dec[499999].b: @as(u8, @intCast(@rem(t1, 16) * 16 + @divTrunc(t2, 4))) }
-            |> captured { acc: @rem(g.acc + 500000, 4294967296) }
-| captured res
-    |> djb2-4(h: 5381, a: 100, b: 101, c: 99, d: 111): h1
-    |> djb2-4(h: h1, a: 100, b: 101, c: 32, d: @as(i64, enc[0].c)): h2
-    |> djb2-4(h: h2, a: @as(i64, enc[1].c), b: @as(i64, enc[2].c), c: @as(i64, enc[3].c), d: 46): h3
-    |> djb2-4(h: h3, a: 46, b: 46, c: 32, d: 116): h4
-    |> djb2-4(h: h4, a: 111, b: 32, c: @as(i64, dec[0].b), d: @as(i64, dec[1].b)): h5
-    |> djb2-4(h: h5, a: @as(i64, dec[2].b), b: @as(i64, dec[3].b), c: 46, d: 46): h6
-    |> djb2-3(h: h6, a: 46, b: 58, c: 32): h7
-    |> djb2-digits(n: res.acc, h: h7): hf
-    |> std/io:print.ln("{{ hf:d }}")
+// enc init: 4-wide walk stores the constant "YWFh" window, then the two
+// tail bytes become 'E','='. Setup, not the measured work — but cheap.
+std/grid:walk { d: enc.c, 4 }
+! each |> std/grid:stored { d[0]: 89, d[1]: 87, d[2]: 70, d[3]: 104 }
+| done |> std/grid:stored { enc[666666].c: 69 }
+    |> std/grid:stored { enc[666667].c: 61 }
+    |> capture { acc: 0[i64] }
+        ! as g |> for(0..4800)
+            ! each it |> dec1(): l
+                |> std/store:stored { st.probe: st.probe + @as(i64, dec[@rem(it * 16127, 500000)].b) }
+                |> captured { acc: @rem(g.acc + l, 4294967296) }
+        | captured res
+            |> vcmp(): _
+            |> djb2-4(h: 5381, a: 100, b: 101, c: 99, d: 111): h1
+            |> djb2-4(h: h1, a: 100, b: 101, c: 32, d: @as(i64, enc[0].c)): h2
+            |> djb2-4(h: h2, a: @as(i64, enc[1].c), b: @as(i64, enc[2].c), c: @as(i64, enc[3].c), d: 46): h3
+            |> djb2-4(h: h3, a: 46, b: 46, c: 32, d: 116): h4
+            |> djb2-4(h: h4, a: 111, b: 32, c: @as(i64, dec[0].b), d: @as(i64, dec[1].b)): h5
+            |> djb2-4(h: h5, a: @as(i64, dec[2].b), b: @as(i64, dec[3].b), c: 46, d: 46): h6
+            |> djb2-3(h: h6, a: 46, b: 58, c: 32): h7
+            |> djb2-digits(n: res.acc, h: h7): hf
+            |> idv(v: st.bad + @as(i64, @intFromBool(st.probe != 465600))): badc
+            |> if(badc > 0)
+                | then |> std/io:print.ln("BADROUNDTRIP")
+            |> std/io:print.ln("{{ hf:d }}")
