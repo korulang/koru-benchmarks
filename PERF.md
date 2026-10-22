@@ -117,6 +117,31 @@ pointer-chasing. Disclose the replacement in the kernel header and diff
 the disasm to prove the field stores survived — LLVM DSE is the
 falsifier that would make the win dishonest.
 
+### 12. Byte arrays must be u8 cells — i64 cells are 8x the traffic
+`compress_lzw_decode` moved ~30GB because `pool`/`dec`/`out`/`dat`
+declared `b: 0[i64]` — every "byte" copy was an 8-byte load+store.
+Narrowing to `0[u8]` alone took 1.11s → 0.59s. Audit every grid that
+holds bytes; if values fit u8, say u8 (values that reach i64 math get
+`@as(i64, x)` at the read site — cheap and explicit). Same rule the
+lzw_encode contestant applied to `pat`/`dat`/`out`.
+
+### 13. Bulk byte moves: counted-for over borrowed slices
+`std/grid:slice(s) { g.c }` borrows a column — `s[i]` splices verbatim,
+no `__koru_at` floor, no write-unit per element. A `for(0..l)` copy
+over two borrowed slices is the honest memcpy shape (bounds are the
+program's obligation — the borrow contract moves them to you, so the
+loop bounds must be provable). Bump cursors per *string*, not per byte;
+store-row cursors inside per-byte loops are pure tax.
+
+### 14. Dict keys: injective arithmetic keys beat string hashing
+`compress_lzw_encode` hashed whole candidate strings per input byte —
+O(phrase_len) work per byte (3.75s). Every LZW insertion is
+`(existing phrase)+(one byte)`, so `prefix_code*256+byte` is an
+injective key — one probe per byte, no hashing, no compares (0.11s).
+General: when every new dict entry is built as `prior-key + delta`,
+the pair IS the key. Epoch-tag slots (`epoch*2^32 + key + 1`) to skip
+per-run table clearing.
+
 ## The falsified list — hypotheses that cost runs
 
 - **`while`→counted `for` driver**: honest (the trip count is real) but
