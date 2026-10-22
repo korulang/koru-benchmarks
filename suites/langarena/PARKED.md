@@ -210,3 +210,15 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     when the index is provably narrow (i32 digit values used as usize
     positions). Cosmetic; a narrow-int index acceptance would declutter
     every radix/counting kernel. (sort_self contestant)
+
+27. **No "hot tor failed to inline" diagnostic.** The raytracer
+    contestant found a 0.63s -> 0.68s regression only by disassembling:
+    moving shading into a hit arm made the handler transitively too
+    large and LLVM stopped inlining it — three real calls per pixel. A
+    koruc warning at emit or a size threshold report would have caught
+    it at compile time. (text_raytracer contestant, 2026-10-22)
+
+28. **`[layout(row)]` cannot produce row-view slices.** Interleaved
+    per-pixel data had to be spelled as a flat f64 column + manual
+    k*3 stride — a `std/grid:slice` variant that borrows row-structured
+    records would express it directly. (text_raytracer contestant)
