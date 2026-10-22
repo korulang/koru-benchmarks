@@ -17,11 +17,11 @@ import std/store
 import std/array
 
 std/grid:new(sieve, size: 5000001) { p: 0[u8] }
-std/grid:new(plist, size: 400000) { v: 0[i64] }
-std/grid:new(tn, size: 2500000) { fc: 0[i64], nc: 0[i64], tm: 0[i64] }
-std/grid:new(rn, size: 2500000) { ch: 0[i64], nd: 0[i64] }
-std/grid:new(que, size: 2500000) { nd: 0[i64], pf: 0[i64] }
-std/grid:new(res, size: 8192) { v: 0[i64] }
+std/grid:new(plist, size: 400000) { v: 0[u32] }
+std/grid:new(tn, size: 2500000) { fc: 0[u32], nc: 0[u32], tm: 0[u32] }
+std/grid:new(rn, size: 2500000) { ch: 0[u8], nd: 0[u32] }
+std/grid:new(que, size: 2500000) { nd: 0[u32], pf: 0[u32] }
+std/grid:new(res, size: 8192) { v: 0[u32] }
 std/store:new(st) { nn: 0[i64], nr: 0[i64], nq: 0[i64], fr: 0[i64], nres: 0[i64], np: 0[i64], lim: 0[i64], t1: 0[i64], t2: 0[i64], t3: 0[i64] }
 
 pub tor ret0 {} -> i64
@@ -75,7 +75,7 @@ tl = std/grid:stored { plist[0].v: 2 }
     |> std/store:stored { st.np: 2 }
     |> std/grid:for(5..lim + 1, sieve)
         ! each p |> if(sieve[p].p == 1)
-            | then |> std/grid:stored { plist[st.np].v: @as(i64, @intCast(p)) }
+            | then |> std/grid:stored { plist[st.np].v: @as(u32, @intCast(p)) }
                 |> std/store:stored { st.np: st.np + 1 }
 
 // ---- digit trie (flat CSR) ---------------------------------------------
@@ -103,8 +103,8 @@ newnd = std/grid:stored { tn[st.nn].fc: 0 }
 
 // append (ch -> nd) at the arena top, bump nr
 pub tor rnput { ch: i64, nd: i64 } -> i64
-rnput = std/grid:stored { rn[st.nr].ch: ch }
-    |> std/grid:stored { rn[st.nr].nd: nd }
+rnput = std/grid:stored { rn[st.nr].ch: @as(u8, @intCast(ch)) }
+    |> std/grid:stored { rn[st.nr].nd: @as(u32, @intCast(nd)) }
     |> std/store:stored { st.nr: st.nr + 1 }
     |> ret0(): _ -> 0
 
@@ -118,14 +118,14 @@ cpkids = if(k > 0)
 // move head's run to the arena top, then append the new child there
 pub tor rnmove { head: i64, ch: i64, nd: i64 } -> i64
 rnmove = cpkids(src: tn[head].fc, dst: st.nr, k: tn[head].nc): _
-    |> std/grid:stored { tn[head].fc: st.nr }
+    |> std/grid:stored { tn[head].fc: @as(u32, @intCast(st.nr)) }
     |> std/store:stored { st.nr: st.nr + tn[head].nc }
     |> rnput(ch, nd): r -> r
 
 // link (head --ch--> nd); run grows in place at the top, else moves
 pub tor link { head: i64, ch: i64, nd: i64 } -> i64
 link = if(tn[head].nc == 0)
-| then |> std/grid:stored { tn[head].fc: st.nr }
+| then |> std/grid:stored { tn[head].fc: @as(u32, @intCast(st.nr)) }
     |> rnput(ch, nd): _
 | else |> if(tn[head].fc + tn[head].nc == st.nr)
     | then |> rnput(ch, nd): _
@@ -162,7 +162,7 @@ tb = for(0..@as(usize, @intCast(st.np)))
 pub tor enqc { head: i64, pf: i64, k: i64 } -> i64
 enqc = if(k < tn[head].nc)
 | then |> std/grid:stored { que[st.nq].nd: rn[tn[head].fc + k].nd }
-    |> std/grid:stored { que[st.nq].pf: pf * 10 + rn[tn[head].fc + k].ch }
+    |> std/grid:stored { que[st.nq].pf: @as(u32, @intCast(pf * 10 + @as(i64, rn[tn[head].fc + k].ch))) }
     |> std/store:stored { st.nq: st.nq + 1 }
     |> enqc(head, pf, k: k + 1): r -> r
 | else -> 0
@@ -173,7 +173,7 @@ bfsstep = if(st.fr < st.nq)
     |> std/store:stored { st.t2: que[st.fr].pf }
     |> std/store:stored { st.fr: st.fr + 1 }
     |> if(tn[st.t1].tm == 1)
-        | then |> std/grid:stored { res[st.nres].v: st.t2 }
+        | then |> std/grid:stored { res[st.nres].v: @as(u32, @intCast(st.t2)) }
             |> std/store:stored { st.nres: st.nres + 1 }
             |> enqc(head: st.t1, pf: st.t2, k: 0): _
             |> bfsstep(): r -> r
@@ -216,8 +216,8 @@ find = rst(): _ |> zsv(lim) |> atkin(lim) |> sq(lim) |> tl(lim) |> tb()
     |> pw10(p: pfx, pw: 1): pw
     |> pfxw(p: pfx, pw, head: 0): head
     |> if(head >= 0)
-        | then |> std/grid:stored { que[st.nq].nd: head }
-            |> std/grid:stored { que[st.nq].pf: pfx }
+        | then |> std/grid:stored { que[st.nq].nd: @as(u32, @intCast(head)) }
+            |> std/grid:stored { que[st.nq].pf: @as(u32, @intCast(pfx)) }
             |> std/store:stored { st.nq: st.nq + 1 }
             |> bfsstep(): _
         |> ret0(): _ -> 0
