@@ -18,6 +18,40 @@
 //
 // result_val accumulates transformed.len only — the content is the
 // work, the length is the receipt.
+//
+// ---- wave-5: LF-chase batching ----
+// Phase timing (std/time:now per pass, this build): per inverse run
+//   nxc (histogram) ~2.0ms, nxs (scatter next[]) ~2.1ms,
+//   fol (LF chase) ~1.31ms — the chase is ~24% of run time, not the
+//   majority. Rust ref: 0.970s/180 = 5.39ms per run; this program
+//   ~5.0ms per run — at parity/ahead per-run; the residual headline
+//   gap is the timing basis (our whole-process number includes the
+//   ~230ms one-time encode + 36 warmup runs that Rust's Instant
+//   window excludes; whole-process Rust is ~1.50s vs our ~1.31s).
+//
+// The LF orbit on this input walks 11 interleaved near-sequential
+// tracks (pos(i+11) = pos(i)-1) — the chase's dependent loads hit
+// ~L1 latency, ~1.31ns/link, i.e. the dependent-load floor.
+//
+// MEASURED ANSWER to "batch the chase": a stride-2 table helps.
+// nx2 = next∘next is built by one independent gather pass per run
+// (~0.2ms — LLVM unrolls it 4x, all loads independent), then the
+// chase hops via nx2 emitting 2 bytes per hop: n/2 serial links.
+// Chase 1.31ms → 0.84ms per run; net (chase+gather) ~1.05ms vs
+// 1.31ms. This is MORE work per run than the reference, not less —
+// the table is rebuilt every run, disclosed here.
+//
+// Falsified this wave:
+//   - stride-4 (nx4 gather + 4B/hop): chase ~0.77ms but +2 gathers
+//     (~0.4ms) — net worse than stride-2 (measured).
+//   - parallel segments: M sub-chases need M segment-start
+//     positions LF^{mS}(oidx); the only honest source is the full
+//     chase (no saving) or a stride gather (the cost above).
+//   - caching next[]/next^2 across runs: identical table every
+//     run, but skipping the per-run histogram/scatter rebuild is
+//     memoization of measured work — not done.
+//   - the chase is NOT the deficit: histogram+scatter are ~80% of
+//     the inverse; they match the reference's passes one-for-one.
 
 import std/io
 import std/grid
@@ -33,12 +67,14 @@ std/grid:new(rnk, size: 1000001) { v: 0[i64] }
 std/grid:new(nr, size: 1000001) { v: 0[i64] }
 std/grid:new(out, size: 1000001) { b: 0[u8] }
 std/grid:new(nx, size: 1000001) { v: 0[i32] }
+std/grid:new(nx2, size: 1000001) { v: 0[i32] }
 std/grid:new(cn2, size: 768) { v: 0[i32] }
 std/grid:new(dec, size: 1000001) { b: 0[u8] }
 std/grid:slice(out_s) { out.b }
 std/grid:slice(dec_s) { dec.b }
 std/grid:slice(dat_s) { dat.b }
 std/grid:slice(nx_s) { nx.v }
+std/grid:slice(nx2_s) { nx2.v }
 std/grid:slice(cn2_s) { cn2.v }
 
 std/store:new(st) { res: 0[i64], n: 1000001[i64], oidx: 0[i64], cr: 0[i64], pc: 0[i64], t1: 0[i64], t2: 0[i64], k: 0[i64], acc: 0[i64], idx: 0[i64], dif: 0[i64] }
@@ -291,21 +327,37 @@ nxs = idv(v: @as(i64, out_s[@as(usize, @intCast(i))])): b
         | then |> nxs(i: i + 1, nn): r -> r
         | else |> ret0(): r -> r
 
-// fol — idx = nx[idx]; dec[i] = out[idx]
-pub tor fol { i: i64, idx: i64, nn: i64 } -> i64
-fol = idv(v: @as(i64, nx_s[@as(usize, @intCast(idx))])): ni
-    |> std/grid:stored { dec_s[@as(usize, @intCast(i))]: out_s[@as(usize, @intCast(ni))] }
+// g2 — nx2[i] = nx[nx[i]]: the LF^2 stride table, one independent
+// gather pass per run (extra work vs the reference — see header)
+pub tor g2 { i: i64, nn: i64 } -> i64
+g2 = idv(v: @as(i64, nx_s[@as(usize, @intCast(i))])): a
+    |> std/grid:stored { nx2_s[@as(usize, @intCast(i))]: nx_s[@as(usize, @intCast(a))] }
     |> if(i < nn - 1)
-        | then |> fol(i: i + 1, idx: ni, nn): r -> r
+        | then |> g2(i: i + 1, nn): r -> r
         | else |> ret0(): r -> r
 
-// inv — one inverse run: build next[], follow from oidx, res += n
+// fol2 — stride-2 LF chase. Per call: dec[i] = out[nx[idx]] always;
+// when a second byte remains, dec[i+1] = out[nx2[idx]] and hop via
+// idx = nx2[idx] — halving the serial dependent-load chain. The
+// else arm emits the last (odd) byte through p1, never past nn-1.
+pub tor fol2 { i: i64, idx: i64, nn: i64 } -> i64
+fol2 = idv(v: @as(i64, nx_s[@as(usize, @intCast(idx))])): p1
+    |> std/grid:stored { dec_s[@as(usize, @intCast(i))]: out_s[@as(usize, @intCast(p1))] }
+    |> if(i < nn - 1)
+        | then |> idv(v: @as(i64, nx2_s[@as(usize, @intCast(idx))])): p2
+            |> std/grid:stored { dec_s[@as(usize, @intCast(i + 1))]: out_s[@as(usize, @intCast(p2))] }
+            |> fol2(i: i + 2, idx: p2, nn): r -> r
+        | else |> ret0(): r -> r
+
+// inv — one inverse run: build next[], build next^2, follow from
+// oidx two bytes per hop, res += n
 pub tor inv { } -> i64
 inv = zc2(i: 0): _
     |> nxc(i: 0, nn: st.n): _
     |> nxp(i: 0, cum: 0): _
     |> nxs(i: 0, nn: st.n): _
-    |> fol(i: 0, idx: st.oidx, nn: st.n): _
+    |> g2(i: 0, nn: st.n): _
+    |> fol2(i: 0, idx: st.oidx, nn: st.n): _
     |> std/store:stored { st.res: st.res + st.n }
     |> ret0(): _ -> 0
 
