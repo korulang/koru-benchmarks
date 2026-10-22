@@ -30,6 +30,13 @@ std/grid:new(adj, size: 21000000) { t: 0[i64] }
 std/grid:new(gs, size: 500000) { g: 0[i64] }
 std/grid:new(bf, size: 500000) { f: 0[i64] }
 std/grid:new(hp, size: 500000) { v: 0[i64], f: 0[i64] }
+std/grid:slice(hpv_s) { hp.v }
+std/grid:slice(hpf_s) { hp.f }
+std/grid:slice(gs_s) { gs.g }
+std/grid:slice(bf_s) { bf.f }
+std/grid:slice(adj_s) { adj.t }
+std/grid:slice(off_s) { off.s }
+std/grid:slice(deg_s) { deg.c }
 std/store:new(st) { last: 42[i64], acc: 0[i64], hsz: 0[i64], sm: 0[i64], pv: 0[i64], u: 0[i64] }
 
 // nxt — one Helper.next_int draw (advances st.last, returns the value)
@@ -88,45 +95,59 @@ hup = if(i > 0 and hp[@divTrunc(i - 1, 2)].f > f)
 // value), NOT against the reinserted last element — so the loop
 // exits after at most one move. Termination writes hp[st.hsz]
 // (the last element) into slot i.
-pub tor hdn { i: i64 } -> i64
-hdn = if(2 * i + 1 < st.hsz and hp[2 * i + 1].f < hp[i].f)
-| then |> std/store:stored { st.sm: 2 * i + 1 }
-| else |> std/store:stored { st.sm: i }
-|> if(2 * i + 2 < st.hsz and hp[2 * i + 2].f < hp[st.sm].f)
-    | then |> std/store:stored { st.sm: 2 * i + 2 }
-|> if(st.sm == i)
-    | then |> std/grid:stored { hp[i].v: hp[st.hsz].v }
-        |> std/grid:stored { hp[i].f: hp[st.hsz].f }: _ -> 0
-    | else |> std/grid:stored { hp[i].v: hp[st.sm].v }
-        |> std/grid:stored { hp[i].f: hp[st.sm].f }
-        |> hdn(i: st.sm): r -> r
+pub tor hdn { i: i64, hsz: i64 } -> i64
+hdn = if(2 * i + 1 < hsz and hpf_s[@as(usize, @intCast(2 * i + 1))] < hpf_s[@as(usize, @intCast(i))])
+| then |> hdnt(i, hsz, sm: 2 * i + 1): r -> r
+| else |> hdnt(i, hsz, sm: i): r -> r
+
+// hdnt — second child compare + termination, split so sm can be a
+// bound value (== in arm ifs only — PARKED #17).
+pub tor hdnt { i: i64, hsz: i64, sm: i64 } -> i64
+hdnt = if(2 * i + 2 < hsz and hpf_s[@as(usize, @intCast(2 * i + 2))] < hpf_s[@as(usize, @intCast(sm))])
+| then |> hdn2(i, hsz, sm: 2 * i + 2): r -> r
+| else |> hdn2(i, hsz, sm): r -> r
+
+pub tor hdn2 { i: i64, hsz: i64, sm: i64 } -> i64
+hdn2 = if(sm == i)
+| then |> std/grid:stored { hpv_s[@as(usize, @intCast(i))]: hpv_s[@as(usize, @intCast(hsz))] }
+    |> std/grid:stored { hpf_s[@as(usize, @intCast(i))]: hpf_s[@as(usize, @intCast(hsz))] }: _ -> 0
+| else |> std/grid:stored { hpv_s[@as(usize, @intCast(i))]: hpv_s[@as(usize, @intCast(sm))] }
+    |> std/grid:stored { hpf_s[@as(usize, @intCast(i))]: hpf_s[@as(usize, @intCast(sm))] }
+    |> hdn(i: sm, hsz): r -> r
+
 
 // awalk — pop+scan fused (k < 0 = pop min; k >= 0 = scanning
 // neighbors of v at cursor k). Popped vertex saved to st.pv BEFORE
 // the sift-down rewrites hp[0]. target = 499999; sentinel = INT32_MAX.
-pub tor awalk { v: i64, k: i64 } -> i64
+// awalk — pop+scan fused. hsz/gv/end ride as params: gv is gs[v]'s
+// score bound once per vertex scan (self-relaxation can never fire —
+// gv+1 < gs[v] is false while gs[v] <= gv), end = off[v]+deg[v].
+pub tor awalk { v: i64, k: i64, hsz: i64, gv: i64, end: i64 } -> i64
 awalk = if(k < 0)
-| then |> if(st.hsz == 0)
+| then |> if(hsz == 0)
     | then -> -1
-    | else |> std/store:stored { st.pv: hp[0].v }
-        |> if(st.pv == 499999)
-            | then |> idv(v: gs[499999].g): r -> r
-            | else |> std/store:stored { st.hsz: st.hsz - 1 }
-                |> if(st.hsz > 0)
-                    | then |> hdn(i: 0): _
-                        |> awalk(v: st.pv, k: off[st.pv].s): r -> r
-                    | else |> awalk(v: st.pv, k: off[st.pv].s): r -> r
-| else |> if(k < off[v].s + deg[v].c)
-    | then |> if(gs[v].g + 1 < gs[adj[k].t].g)
-        | then |> std/grid:stored { gs[adj[k].t].g: gs[v].g + 1 }
-            |> if(gs[v].g + 1 + 499999 - adj[k].t < bf[adj[k].t].f)
-                | then |> std/grid:stored { bf[adj[k].t].f: gs[v].g + 1 + 499999 - adj[k].t }
-                    |> hup(i: st.hsz, v: adj[k].t, f: gs[v].g + 1 + 499999 - adj[k].t): _
-                    |> std/store:stored { st.hsz: st.hsz + 1 }
-                    |> awalk(v, k: k + 1): r -> r
-                | else |> awalk(v, k: k + 1): r -> r
-        | else |> awalk(v, k: k + 1): r -> r
-    | else |> awalk(v: 0, k: -1): r -> r
+    | else |> idv(v: hpv_s[0]): pv
+        |> if(pv == 499999)
+            | then |> idv(v: gs_s[499999]): r -> r
+            | else |> idv(v: hsz - 1): hsz2
+                |> if(hsz2 > 0)
+                    | then |> hdn(i: 0, hsz: hsz2): _
+                        |> idv(v: gs_s[@as(usize, @intCast(pv))]): g2
+                        |> awalk(v: pv, k: off_s[@as(usize, @intCast(pv))], hsz: hsz2, gv: g2, end: off_s[@as(usize, @intCast(pv))] + deg_s[@as(usize, @intCast(pv))]): r -> r
+                    | else |> idv(v: gs_s[@as(usize, @intCast(pv))]): g2
+                        |> awalk(v: pv, k: off_s[@as(usize, @intCast(pv))], hsz: hsz2, gv: g2, end: off_s[@as(usize, @intCast(pv))] + deg_s[@as(usize, @intCast(pv))]): r -> r
+| else |> if(k < end)
+    | then |> idv(v: adj_s[@as(usize, @intCast(k))]): t
+        |> if(gv + 1 < gs_s[@as(usize, @intCast(t))])
+            | then |> std/grid:stored { gs_s[@as(usize, @intCast(t))]: gv + 1 }
+                |> if(gv + 1 + 499999 - t < bf_s[@as(usize, @intCast(t))])
+                    | then |> std/grid:stored { bf_s[@as(usize, @intCast(t))]: gv + 1 + 499999 - t }
+                        |> hup(i: hsz, v: t, f: gv + 1 + 499999 - t): _
+                        |> awalk(v, k: k + 1, hsz: hsz + 1, gv, end): r -> r
+                    | else |> awalk(v, k: k + 1, hsz, gv, end): r -> r
+            | else |> awalk(v, k: k + 1, hsz, gv, end): r -> r
+    | else |> awalk(v: 0, k: -1, hsz, gv: 0, end: 0): r -> r
+
 
 // pass A: count degrees. Chain edges first (no RNG), then jump draws
 // consuming the real LCG stream.
@@ -158,14 +179,13 @@ gpass(v: 0, mode: 1): _
 // per run, exactly like the reference's fresh Arrays.
 for(0..1200)
 ! each _ |> for(0..500000)
-    ! each i |> std/grid:stored { gs[i].g: 2147483647 }
-        |> std/grid:stored { bf[i].f: 2147483647 }
-    | done |> std/grid:stored { gs[0].g: 0 }
-        |> std/grid:stored { bf[0].f: 499999 }
-        |> std/grid:stored { hp[0].v: 0 }
-        |> std/grid:stored { hp[0].f: 499999 }
-        |> std/store:stored { st.hsz: 1 }
-        |> awalk(v: 0, k: -1): r
+    ! each i |> std/grid:stored { gs_s[@as(usize, @intCast(i))]: 2147483647 }
+        |> std/grid:stored { bf_s[@as(usize, @intCast(i))]: 2147483647 }
+    | done |> std/grid:stored { gs_s[0]: 0 }
+        |> std/grid:stored { bf_s[0]: 499999 }
+        |> std/grid:stored { hpv_s[0]: 0 }
+        |> std/grid:stored { hpf_s[0]: 499999 }
+        |> awalk(v: 0, k: -1, hsz: 1, gv: 0, end: 0): r
         |> if(r == -1)
             | then |> std/store:stored { st.acc: @rem(st.acc + 4294967295, 4294967296) }
             | else |> std/store:stored { st.acc: @rem(st.acc + r, 4294967296) }
