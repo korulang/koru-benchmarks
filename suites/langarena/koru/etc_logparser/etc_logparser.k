@@ -16,10 +16,31 @@
 // Per-pattern sim counts (52000 lines): 33089 26000 11885 204 12876
 // 13000 17334 39000 17334 17334 6933 3962 4335 → total 203286 ×12.
 //
+// Perf notes (whole-process min, this machine):
+//   baseline 13 separate scans      ~2.97s
+//   + std/grid:slice raw borrows    ~2.05s  (declines per-byte
+//     __koru_at floor checks; every index is already guarded by st.tl)
+//   + fused single-pass scanner     ~0.33s  (one dispatch pass; rs[p]
+//     resume cursors preserve find_iter non-overlap per pattern)
+//   RETAINED: u32 cursors/u8 bytes (PERF.md lane recipe), c9 byte-class
+//     table, switch:char on the folded byte, per-pattern fail-forward
+//     (t4/t9 jump the resume to the run end — a failed start inside a
+//     run can never match: the shared end boundary is consumed).
+//   FALSIFIED (all measured slower than the kept shape):
+//   - dispatch-class table dsp[c] -> switch tag: +0.03s. The arm index
+//     becomes a dependent load feeding the indirect jump.
+//   - folding the t9g/t1 gates into per-class switch arms: +0.03-0.05s.
+//     More arms widened the jump-table region; the single shared gate
+//     call site wins.
+//   - raw-byte dispatch without lowb (both-case letter arms): +0.03s.
+//   - hoisting alteq's per-char bound check into am(): +0.03s. Most
+//     literals die on char 0, so the pre-check is pure overhead.
+//
 import std/io
 import std/grid
 import std/store
 import std/fmt
+import std/switch
 
 std/grid:new(logb, size: 7600000) { b: 0[u8] }
 std/grid:new(strs, size: 512) { b: 0[u8] }
@@ -29,6 +50,26 @@ std/grid:new(altt, size: 32) { o: 0[i64], l: 0[i64] }
 std/grid:new(cnts, size: 13) { v: 0[i64] }
 std/grid:new(stt9, size: 11) { v: 0[i64] }
 std/store:new(st) { res: 0[i64], tl: 0[i64], so: 0[i64], ao: 0[i64], tot: 0[i64], t1: 0[i64] }
+// Raw borrows for the scan side: the per-byte __koru_at floor (a panic
+// edge per read — ~7 bound pairs per byte in nwsE alone) is what the
+// borrow declines; index obligation is the scanners' own guards, which
+// already bound every index by st.tl. Cursors are u32 — they widen to
+// usize at the index for free, so no casts anywhere in a scan body.
+std/grid:slice(lb) { logb.b }
+std/grid:slice(al) { alt.b }
+std/grid:slice(alo) { altt.o }
+std/grid:slice(aln) { altt.l }
+// rs[p]: pattern p's resume point — the next index where a match may
+// start, i.e. the end of p's previous match (regex find_iter's
+// non-overlapping resume, held explicitly because the scans below are
+// FUSED into one pass over the buffer). c9t/c9: the email local-part
+// class [a-zA-Z0-9._%+-] as a 256-entry byte table — one load instead of
+// a 7-way compare per byte.
+std/grid:new(rsv, size: 13) { v: 0[i64] }
+std/grid:slice(rs) { rsv.v }
+std/grid:slice(cv) { cnts.v }
+std/grid:new(c9t, size: 256) { v: 0[u8] }
+std/grid:slice(c9) { c9t.v }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
@@ -199,298 +240,388 @@ genl = if(i < 52000)
 
 // ---- matcher helpers ----
 // digE — end of digit run at j (produce j)
-pub tor digE { j: i64 } -> i64
-digE = if(j < st.tl and logb[j].b >= 48 and logb[j].b <= 57)
+pub tor digE { j: u32 } -> u32
+digE = if(j < st.tl and lb[j] >= 48 and lb[j] <= 57)
 | then |> digE(j: j + 1): r -> r
 | else -> j
 
 // nwsE — end of [^&\s"] run at j
-pub tor nwsE { j: i64 } -> i64
-nwsE = if(j < st.tl and logb[j].b != 38 and logb[j].b != 32 and logb[j].b != 9 and logb[j].b != 10 and logb[j].b != 13 and logb[j].b != 12 and logb[j].b != 11 and logb[j].b != 34)
+pub tor nwsE { j: u32 } -> u32
+nwsE = if(j < st.tl and lb[j] != 38 and lb[j] != 32 and lb[j] != 9 and lb[j] != 10 and lb[j] != 13 and lb[j] != 12 and lb[j] != 11 and lb[j] != 34)
 | then |> nwsE(j: j + 1): r -> r
 | else -> j
 
 // alteq — match length if log[i..] equals alt entry a, else 0
-// (ci: case-fold both). The length goes through st.t1 because a
-// grid-field access inside a produce arm only lowers on readfix —
-// main koruc emits it raw (a7ddcbcb3 territory).
-pub tor alteq { i: i64, a: i64, k: i64, ci: i64 } -> i64
-alteq = if(k < altt[a].l)
+// (ci: case-fold the log byte only — every ci literal in altt is
+// already lowercase, so folding it again is dead work). aln[a]/alo[a]
+// are i64 slice reads — loop-invariant, hoisted by LLVM; the u32 cast
+// is free in ReleaseFast. Hoisting the per-char bound check into am()
+// was MEASURED slower — most literals die on char 0, so the hoisted
+// check is pure extra work at every call.
+pub tor alteq { i: u32, a: u32, k: u32, ci: i64 } -> u32
+alteq = if(k < aln[a])
 | then |> if(i + k < st.tl)
         | then |> if(ci == 1)
-            | then |> lowb(v: logb[i + k].b): x1
-                |> lowb(v: alt[altt[a].o + k].b): x2
-                |> if(x1 == x2)
+            | then |> lowb(v: lb[i + k]): x1
+                |> if(x1 == al[@as(u32, @intCast(alo[a])) + k])
                     | then |> alteq(i, a, k: k + 1, ci): r -> r
                     | else -> 0
-            | else |> if(logb[i + k].b == alt[altt[a].o + k].b)
+            | else |> if(lb[i + k] == al[@as(u32, @intCast(alo[a])) + k])
                 | then |> alteq(i, a, k: k + 1, ci): r -> r
                 | else -> 0
         | else -> 0
-| else |> std/store:stored { st.t1: altt[a].l }: _ -> st.t1
+| else -> @as(u32, @intCast(aln[a]))
 
-pub tor lowb { v: i64 } -> i64
+pub tor lowb { v: u8 } -> u8
 lowb = if(v >= 65 and v <= 90)
 | then -> v + 32
 | else -> v
 
-// altat — first alternative (in pattern order) matching at i
-// produces its length, -1 if none
-pub tor altat { i: i64, a: i64, na: i64, ci: i64 } -> i64
-altat = if(a < na)
-| then |> alteq(i, a, k: 0, ci): m
+// The alternation-scan machinery is FUSED: instead of 13 passes over the
+// buffer, `fuse` makes one pass and a switch on the (case-folded) byte
+// dispatches only to patterns that could start there. Per-pattern resume
+// cursors rs[p] keep find_iter's non-overlapping-match semantics — a
+// position inside p's previous match is skipped for p only.
+
+// am — produce match-END (i + len) of literal alt a at i, or 0
+pub tor am { i: u32, a: u32, ci: i64 } -> u32
+am = alteq(i, a, k: 0, ci): m
     |> if(m > 0)
-        | then -> m
-        | else |> altat(i, a: a + 1, na, ci): r -> r
-| else -> -1
+        | then -> i + m
+        | else -> 0
 
-// scalt — generic alternation scan: count matches of alts [a0,na)
-// over the whole log, non-overlapping resume, into cnts[p]
-pub tor scalt { i: i64, p: i64, a0: i64, na: i64, ci: i64 } -> i64
-scalt = if(i < st.tl)
-| then |> altat(i, a: a0, na, ci): m
-    |> if(m > 0)
-        | then |> std/grid:stored { cnts[p].v: cnts[p].v + 1 }
-            |> scalt(i: i + m, p, a0, na, ci): r -> r
-        | else |> scalt(i: i + 1, p, a0, na, ci): r -> r
+// am2/am3 — first alt (pattern order) matching at i, produce end or 0
+pub tor am2 { i: u32, a: u32, b: u32, ci: i64 } -> u32
+am2 = am(i, a, ci): e
+    |> if(e > 0)
+        | then -> e
+        | else |> am(i, a: b, ci): e2 -> e2
+
+pub tor am3 { i: u32, a: u32, b: u32, d: u32, ci: i64 } -> u32
+am3 = am(i, a, ci): e
+    |> if(e > 0)
+        | then -> e
+        | else |> am(i, a: b, ci): e2
+            |> if(e2 > 0)
+                | then -> e2
+                | else |> am(i, a: d, ci): e3 -> e3
+
+// hit — match [i, e) of pattern p: count it, resume p at e
+pub tor hit { p: u32, e: u32 } -> i64
+hit = if(e > 0)
+| then |> std/grid:stored { cv[p]: cv[p] + 1 }
+    |> std/grid:stored { rs[p]: e }
+    |> ret0(): _ -> 0
 | else -> 0
 
-// sc1 — " [45]dd "
-pub tor sc1 { i: i64 } -> i64
-sc1 = if(i + 4 < st.tl)
-| then |> if(logb[i].b == 32 and (logb[i + 1].b == 53 or logb[i + 1].b == 52) and logb[i + 2].b >= 48 and logb[i + 2].b <= 57 and logb[i + 3].b >= 48 and logb[i + 3].b <= 57 and logb[i + 4].b == 32)
-        | then |> std/grid:stored { cnts[0].v: cnts[0].v + 1 }
-            |> sc1(i: i + 5): r -> r
-        | else |> sc1(i: i + 1): r -> r
+// ---- per-pattern tests (produce match end or 0) ----
+// t1 — " [45]dd "
+pub tor t1 { i: u32, c: u8 } -> i64
+t1 = if(c == 32 and i >= rs[0] and i + 4 < st.tl and (lb[i + 1] == 53 or lb[i + 1] == 52) and lb[i + 2] >= 48 and lb[i + 2] <= 57 and lb[i + 3] >= 48 and lb[i + 3] <= 57 and lb[i + 4] == 32)
+| then |> hit(p: 0, e: i + 5): _ -> 0
 | else -> 0
 
-// sc4 — \d+\.\d+\.\d+\.35 : digit run, then .D+.D+.35 tail;
-// a failed start inside a digit run can never match (the next '.'
-// boundary is shared), so the scan continues from run end
-pub tor sc4 { i: i64 } -> i64
-sc4 = if(i < st.tl)
-| then |> if(logb[i].b >= 48 and logb[i].b <= 57)
-        | then |> digE(j: i): e1
-            |> if(e1 < st.tl and logb[e1].b == 46)
-                | then |> digE(j: e1 + 1): e2
-                    |> if(e2 > e1 + 1 and e2 < st.tl and logb[e2].b == 46)
-                        | then |> digE(j: e2 + 1): e3
-                            |> if(e3 > e2 + 1 and e3 + 2 < st.tl and logb[e3].b == 46 and logb[e3 + 1].b == 51 and logb[e3 + 2].b == 53)
-                                | then |> std/grid:stored { cnts[3].v: cnts[3].v + 1 }
-                                    |> sc4(i: e3 + 3): r -> r
-                                | else |> sc4(i: e1): r -> r
-                        | else |> sc4(i: e1): r -> r
-                | else |> sc4(i: e1): r -> r
-        | else |> sc4(i: i + 1): r -> r
+// t4 — \d+\.\d+\.\d+\.35 ; a failed start inside a digit run can
+// never match (the next '.' boundary is shared), so on tail failure the
+// resume point jumps to the run end — the old sc4's `sc4(i: e1)`, held
+// here as rs[3] because the cursor is shared.
+pub tor t4 { i: u32 } -> i64
+t4 = if(i >= rs[3])
+| then |> digE(j: i): e1
+    |> if(e1 < st.tl and lb[e1] == 46)
+        | then |> digE(j: e1 + 1): e2
+            |> if(e2 > e1 + 1 and e2 < st.tl and lb[e2] == 46)
+                | then |> digE(j: e2 + 1): e3
+                    |> if(e3 > e2 + 1 and e3 + 2 < st.tl and lb[e3] == 46 and lb[e3 + 1] == 51 and lb[e3 + 2] == 53)
+                        | then |> hit(p: 3, e: e3 + 3): _ -> 0
+                        | else |> std/grid:stored { rs[3]: e1 }: _ -> 0
+                | else |> std/grid:stored { rs[3]: e1 }: _ -> 0
+        | else |> std/grid:stored { rs[3]: e1 }: _ -> 0
 | else -> 0
 
-// sc5 — /api/[^ "]+
-pub tor sc5 { i: i64 } -> i64
-sc5 = if(i < st.tl)
-| then |> altat(i, a: 0, na: 1, ci: 0): m
-    |> if(m > 0)
-        | then |> apir(j: i + 5): e
-            |> if(e > i + 5)
-                | then |> std/grid:stored { cnts[4].v: cnts[4].v + 1 }
-                    |> sc5(i: e): r -> r
-                | else |> sc5(i: i + 1): r -> r
-        | else |> sc5(i: i + 1): r -> r
+// t9 — email: mc1E run, '@', domain run, last-dot + >=2 alphas.
+// Fail-forward identical to the old sc9: any start inside a dead
+// local-part run ends at the same byte and fails the same way, so the
+// resume point jumps to the run end.
+pub tor t9 { i: u32 } -> i64
+t9 = mc1E(j: i): e1
+    |> if(e1 < st.tl and lb[e1] == 64)
+        | then |> mc2E(j: e1 + 1): e2
+            |> dotbk(p: e2 - 1, lo: e1 + 1, hi: e2): m
+                |> if(m > 0)
+                    | then |> hit(p: 8, e: m): _ -> 0
+                    | else |> std/grid:stored { rs[8]: e1 }: _ -> 0
+        | else |> std/grid:stored { rs[8]: e1 }: _ -> 0
+
+// t13 — \[\d+/\w+/\d+:1[3-7]:\d+:\d+ [+\-]\d+\]
+pub tor t13 { i: u32 } -> i64
+t13 = if(i >= rs[12])
+| then |> digE(j: i + 1): e1
+    |> if(e1 > i + 1 and e1 < st.tl and lb[e1] == 47)
+        | then |> wdrE(j: e1 + 1): e2
+            |> if(e2 > e1 + 1 and e2 < st.tl and lb[e2] == 47)
+                | then |> digE(j: e2 + 1): e3
+                    |> if(e3 > e2 + 1 and e3 + 3 < st.tl and lb[e3] == 58 and lb[e3 + 1] == 49 and lb[e3 + 2] >= 51 and lb[e3 + 2] <= 55 and lb[e3 + 3] == 58)
+                        | then |> digE(j: e3 + 4): e4
+                            |> if(e4 > e3 + 4 and e4 < st.tl and lb[e4] == 58)
+                                | then |> digE(j: e4 + 1): e5
+                                    |> if(e5 > e4 + 1 and e5 + 1 < st.tl and lb[e5] == 32 and (lb[e5 + 1] == 43 or lb[e5 + 1] == 45))
+                                        | then |> digE(j: e5 + 2): e6
+                                            |> if(e6 > e5 + 2 and e6 < st.tl and lb[e6] == 93)
+                                                | then |> hit(p: 12, e: e6 + 1): _ -> 0
+                                                | else -> 0
+                                        | else -> 0
+                                | else -> 0
+                        | else -> 0
+                | else -> 0
+        | else -> 0
 | else -> 0
+
+// m5 — "/api/" then [^ "]+ : produce end or 0
+pub tor m5 { i: u32 } -> u32
+m5 = am(i, a: 0, ci: 0): e
+    |> if(e > 0)
+        | then |> apir(j: e): e2
+            |> if(e2 > e)
+                | then -> e2
+                | else -> 0
+        | else -> 0
+
+// m6 — "POST " then [^ ]* then " HTTP" : produce end or 0
+pub tor m6 { i: u32 } -> u32
+m6 = am(i, a: 1, ci: 0): e
+    |> if(e > 0)
+        | then |> nspE(j: e): e2
+            |> if(e2 + 5 <= st.tl and lb[e2] == 32 and lb[e2 + 1] == 72 and lb[e2 + 2] == 84 and lb[e2 + 3] == 84 and lb[e2 + 4] == 80)
+                | then -> e2 + 5
+                | else -> 0
+        | else -> 0
+
+// m10 — "password=" then [^&\s"]+ : produce end or 0
+pub tor m10 { i: u32 } -> u32
+m10 = am(i, a: 2, ci: 0): e
+    |> if(e > 0)
+        | then |> nwsE(j: e): e2
+            |> if(e2 > e)
+                | then -> e2
+                | else -> 0
+        | else -> 0
+
+// m11 — [^&\s"]+ run from e (token/session value): produce end or 0
+pub tor m11 { e: u32 } -> u32
+m11 = nwsE(j: e): e2
+    |> if(e2 > e)
+        | then -> e2
+        | else -> 0
+
+// ---- per-byte-class dispatch tors (switch arms stay flat) ----
+// dSlash — '/' : p5 "/api/x" then p7 ci "/login|/signin"
+pub tor dSlash { i: u32 } -> i64
+dSlash = if(i >= rs[4])
+| then |> m5(i): e |> hit(p: 4, e): _ |> d7(i): r -> r
+| else |> d7(i): r -> r
+
+pub tor d7 { i: u32 } -> i64
+d7 = if(i >= rs[6])
+| then |> am2(i, a: 20, b: 21, ci: 1): e |> hit(p: 6, e): _ -> 0
+| else -> 0
+
+// dP — folded 'p' : p8 ci post|put, then raw 'p' -> p10 password=,
+// raw 'P' -> p6 POST.
+pub tor dP { i: u32, c: u8 } -> i64
+dP = if(i >= rs[7])
+| then |> am2(i, a: 23, b: 24, ci: 1): e |> hit(p: 7, e): _ |> dP2(i, c): r -> r
+| else |> dP2(i, c): r -> r
+
+pub tor dP2 { i: u32, c: u8 } -> i64
+dP2 = if(c == 112)
+| then |> if(i >= rs[9])
+        | then |> m10(i): e |> hit(p: 9, e): _ -> 0
+        | else -> 0
+| else |> if(c == 80)
+    | then |> if(i >= rs[5])
+            | then |> m6(i): e |> hit(p: 5, e): _ -> 0
+            | else -> 0
+    | else -> 0
+
+// dS — folded 's' : p2 ci scanner|spider, then raw 's' -> p12 session*
+pub tor dS { i: u32, c: u8 } -> i64
+dS = if(i >= rs[1])
+| then |> am2(i, a: 12, b: 13, ci: 1): e |> hit(p: 1, e): _ |> dS12(i, c): r -> r
+| else |> dS12(i, c): r -> r
+
+pub tor dS12 { i: u32, c: u8 } -> i64
+dS12 = if(c == 115 and i >= rs[11])
+| then |> am3(i, a: 7, b: 8, d: 9, ci: 0): e
+    |> if(e > 0)
+        | then |> m11(e): e2 |> hit(p: 11, e: e2): _ -> 0
+        | else -> 0
+| else -> 0
+
+// dA — raw 'a' : p11 api[_-]?key= (alts 4,5,6 = api_key|api-key|apikey)
+pub tor dA { i: u32, c: u8 } -> i64
+dA = if(c == 97 and i >= rs[10])
+| then |> am3(i, a: 4, b: 5, d: 6, ci: 0): e
+    |> if(e > 0)
+        | then |> m11(e): e2 |> hit(p: 10, e: e2): _ -> 0
+        | else -> 0
+| else -> 0
+
+// dT — raw 't' : p11 token=
+pub tor dT { i: u32, c: u8 } -> i64
+dT = if(c == 116 and i >= rs[10])
+| then |> am(i, a: 3, ci: 0): e
+    |> if(e > 0)
+        | then |> m11(e): e2 |> hit(p: 10, e: e2): _ -> 0
+        | else -> 0
+| else -> 0
+
+// t9g — the email gate: eligible (i >= resume) AND c in the c9
+// local-part class. Runs unconditionally per byte — folding it into
+// the switch arms (one t9g call site per local-part class byte) was
+// MEASURED slower: it widened the jump table and lost to the single
+// shared check site (see falsified notes in the header).
+pub tor t9g { i: u32, c: u8 } -> i64
+t9g = if(i >= rs[8] and c9[c] != 0)
+| then |> t9(i): _ -> 0
+| else -> 0
+
+
+// fuse — ONE pass over the buffer. Per byte: email test (class table +
+// resume gate), the " [45]dd " test, then a folded-byte dispatch into
+// only the patterns that could start there. n is st.tl bound once at
+// the call so the loop guard is a register compare, not a store-field
+// load per byte.
+pub tor fuse { i: u32, n: u32 } -> i64
+fuse = if(i < n)
+| then |> idv8(v: lb[i]): c
+        |> lowb(v: c): cf
+        |> t9g(i, c): _
+        |> t1(i, c): _
+        |> std/switch:char(cf)
+            | `0-9` _ |> t4(i): _ |> fuse(i: i + 1, n): r -> r
+            | `[` _ |> t13(i): _ |> fuse(i: i + 1, n): r -> r
+            | `/` _ |> dSlash(i): _ |> fuse(i: i + 1, n): r -> r
+            | `a` _ |> dA(i, c): _ |> fuse(i: i + 1, n): r -> r
+            | `b` _ |> if(i >= rs[1])
+                | then |> am(i, a: 10, ci: 1): e |> hit(p: 1, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `c` _ |> if(i >= rs[1])
+                | then |> am2(i, a: 11, b: 15, ci: 1): e |> hit(p: 1, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `e` _ |> if(i >= rs[2])
+                | then |> am(i, a: 17, ci: 1): e |> hit(p: 2, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `g` _ |> if(i >= rs[7])
+                | then |> am(i, a: 22, ci: 1): e |> hit(p: 7, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `i` _ |> if(i >= rs[1])
+                | then |> am(i, a: 14, ci: 1): e |> hit(p: 1, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `p` _ |> dP(i, c): _ |> fuse(i: i + 1, n): r -> r
+            | `r` _ |> if(i >= rs[1])
+                | then |> am(i, a: 16, ci: 1): e |> hit(p: 1, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `s` _ |> dS(i, c): _ |> fuse(i: i + 1, n): r -> r
+            | `t` _ |> dT(i, c): _ |> fuse(i: i + 1, n): r -> r
+            | `w` _ |> if(i >= rs[2])
+                | then |> am(i, a: 18, ci: 1): e |> hit(p: 2, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | `.` _ |> if(i >= rs[2])
+                | then |> am(i, a: 19, ci: 1): e |> hit(p: 2, e): _ |> fuse(i: i + 1, n): r -> r
+                | else |> fuse(i: i + 1, n): r -> r
+            | no-match |> fuse(i: i + 1, n): r -> r
+| else -> 0
+
+// wdrE — end of \w+ run
+pub tor wdrE { j: u32 } -> u32
+wdrE = if(j < st.tl and ((lb[j] >= 48 and lb[j] <= 57) or (lb[j] >= 97 and lb[j] <= 122) or (lb[j] >= 65 and lb[j] <= 90) or lb[j] == 95))
+| then |> wdrE(j: j + 1): r -> r
+| else -> j
 
 // apir — end of [^ "] run (no ampersand exclusion — pattern p5's
 // class is [^ "], not the nws class)
-pub tor apir { j: i64 } -> i64
-apir = if(j < st.tl and logb[j].b != 32 and logb[j].b != 34)
+pub tor apir { j: u32 } -> u32
+apir = if(j < st.tl and lb[j] != 32 and lb[j] != 34)
 | then |> apir(j: j + 1): r -> r
 | else -> j
 
-// sc6 — POST [^ ]* HTTP
-pub tor sc6 { i: i64 } -> i64
-sc6 = if(i < st.tl)
-| then |> altat(i, a: 1, na: 2, ci: 0): m
-    |> if(m > 0)
-        | then |> nspE(j: i + 5): e
-            |> if(e + 5 <= st.tl and logb[e].b == 32 and logb[e + 1].b == 72 and logb[e + 2].b == 84 and logb[e + 3].b == 84 and logb[e + 4].b == 80)
-                | then |> std/grid:stored { cnts[5].v: cnts[5].v + 1 }
-                    |> sc6(i: e + 5): r -> r
-                | else |> sc6(i: i + 1): r -> r
-        | else |> sc6(i: i + 1): r -> r
-| else -> 0
-
 // nspE — end of [^ ] run
-pub tor nspE { j: i64 } -> i64
-nspE = if(j < st.tl and logb[j].b != 32)
+pub tor nspE { j: u32 } -> u32
+nspE = if(j < st.tl and lb[j] != 32)
 | then |> nspE(j: j + 1): r -> r
 | else -> j
 
-// sc9 — email: [a-zA-Z0-9._%+-]+ @ [a-zA-Z0-9.-]+ \. alpha{2,}
-pub tor sc9 { i: i64 } -> i64
-sc9 = if(i < st.tl)
-| then |> mc1c(v: logb[i].b): c
-        |> if(c == 1)
-        | then |> mc1E(j: i): e1
-            |> if(e1 < st.tl and logb[e1].b == 64)
-                | then |> mc2E(j: e1 + 1): e2
-                    |> dotbk(p: e2 - 1, lo: e1 + 1, hi: e2): m
-                        |> if(m > 0)
-                            | then |> std/grid:stored { cnts[8].v: cnts[8].v + 1 }
-                                |> sc9(i: m): r -> r
-                            | else |> sc9(i: e1): r -> r
-                | else |> sc9(i: e1): r -> r
-        | else |> sc9(i: i + 1): r -> r
-| else -> 0
-
 // dotbk — find the LAST '.' in (lo, hi) with >=2 trailing alphas
 // (greedy domain+ backtrack; the domain needs >= 1 char before the
-// dot, so p must stay strictly inside); produces hi or -1
-pub tor dotbk { p: i64, lo: i64, hi: i64 } -> i64
+// dot, so p must stay strictly inside); produces hi or 0 (u32 lane —
+// was -1; caller tests m > 0, same semantics)
+pub tor dotbk { p: u32, lo: u32, hi: u32 } -> u32
 dotbk = if(p > lo)
-| then |> if(logb[p].b == 46 and hi - p - 1 >= 2)
+| then |> if(lb[p] == 46 and hi - p - 1 >= 2)
         | then |> alla(j: p + 1, hi): ok
             |> if(ok == 1)
                 | then -> hi
                 | else |> dotbk(p: p - 1, lo, hi): r -> r
         | else |> dotbk(p: p - 1, lo, hi): r -> r
-| else -> -1
+| else -> 0
 
 // alla — 1 if log[j..hi) all alpha
-pub tor alla { j: i64, hi: i64 } -> i64
+pub tor alla { j: u32, hi: u32 } -> i64
 alla = if(j < hi)
-| then |> if((logb[j].b >= 97 and logb[j].b <= 122) or (logb[j].b >= 65 and logb[j].b <= 90))
+| then |> if((lb[j] >= 97 and lb[j] <= 122) or (lb[j] >= 65 and lb[j] <= 90))
         | then |> alla(j: j + 1, hi): r -> r
         | else -> 0
 | else -> 1
 
-// mc1c — email local-part class
-pub tor mc1c { v: i64 } -> i64
-mc1c = if((v >= 97 and v <= 122) or (v >= 65 and v <= 90) or (v >= 48 and v <= 57) or v == 46 or v == 95 or v == 37 or v == 43 or v == 45)
-| then -> 1
-| else -> 0
-
-// mc1E — end of local-part run
-pub tor mc1E { j: i64 } -> i64
-mc1E = if(j < st.tl)
-| then |> mc1c(v: logb[j].b): c
-    |> if(c == 1)
-        | then |> mc1E(j: j + 1): r -> r
-        | else -> j
+// mc1E — end of local-part run (class via the c9 table — one load)
+pub tor mc1E { j: u32 } -> u32
+mc1E = if(j < st.tl and c9[lb[j]] != 0)
+| then |> mc1E(j: j + 1): r -> r
 | else -> j
 
 // mc2c — email domain class
-pub tor mc2c { v: i64 } -> i64
+pub tor mc2c { v: u8 } -> i64
 mc2c = if((v >= 97 and v <= 122) or (v >= 65 and v <= 90) or (v >= 48 and v <= 57) or v == 46 or v == 45)
 | then -> 1
 | else -> 0
 
 // mc2E — end of domain run
-pub tor mc2E { j: i64 } -> i64
+pub tor mc2E { j: u32 } -> u32
 mc2E = if(j < st.tl)
-| then |> mc2c(v: logb[j].b): c
+| then |> mc2c(v: lb[j]): c
     |> if(c == 1)
         | then |> mc2E(j: j + 1): r -> r
         | else -> j
 | else -> j
 
-// sc10 — password=[^&\s"]+
-pub tor sc10 { i: i64 } -> i64
-sc10 = if(i < st.tl)
-| then |> altat(i, a: 2, na: 3, ci: 0): m
-    |> if(m > 0)
-        | then |> nwsE(j: i + 9): e
-            |> if(e > i + 9)
-                | then |> std/grid:stored { cnts[9].v: cnts[9].v + 1 }
-                    |> sc10(i: e): r -> r
-                | else |> sc10(i: i + 1): r -> r
-        | else |> sc10(i: i + 1): r -> r
+// c9r — fill c9[a..b) with 1 (build the local-part class table)
+pub tor c9r { a: u32, b: u32 } -> i64
+c9r = if(a < b)
+| then |> std/grid:stored { c9t[a].v: 1 }
+    |> c9r(a: a + 1, b): r -> r
 | else -> 0
 
-// sc11 — token=[^&\s"]+ | api[_-]?key=[^&\s"]+  (token= tried first)
-pub tor sc11 { i: i64 } -> i64
-sc11 = if(i < st.tl)
-| then |> altat(i, a: 3, na: 7, ci: 0): m
-    |> if(m > 0)
-        | then |> nwsE(j: i + m): e
-            |> if(e > i + m)
-                | then |> std/grid:stored { cnts[10].v: cnts[10].v + 1 }
-                    |> sc11(i: e): r -> r
-                | else |> sc11(i: i + 1): r -> r
-        | else |> sc11(i: i + 1): r -> r
-| else -> 0
+// idv8 — bind a raw byte (the select recipe's diamond shape)
+pub tor idv8 { v: u8 } -> u8
+idv8 -> v
 
-// sc12 — session[_-]?id=[^&\s"]+
-pub tor sc12 { i: i64 } -> i64
-sc12 = if(i < st.tl)
-| then |> altat(i, a: 7, na: 10, ci: 0): m
-    |> if(m > 0)
-        | then |> nwsE(j: i + m): e
-            |> if(e > i + m)
-                | then |> std/grid:stored { cnts[11].v: cnts[11].v + 1 }
-                    |> sc12(i: e): r -> r
-                | else |> sc12(i: i + 1): r -> r
-        | else |> sc12(i: i + 1): r -> r
-| else -> 0
-
-// sc13 — \[\d+/\w+/\d+:1[3-7]:\d+:\d+ [+\-]\d+\]
-pub tor sc13 { i: i64 } -> i64
-sc13 = if(i < st.tl)
-| then |> if(logb[i].b == 91)
-        | then |> digE(j: i + 1): e1
-            |> if(e1 > i + 1 and e1 < st.tl and logb[e1].b == 47)
-                | then |> wdrE(j: e1 + 1): e2
-                    |> if(e2 > e1 + 1 and e2 < st.tl and logb[e2].b == 47)
-                        | then |> digE(j: e2 + 1): e3
-                            |> if(e3 > e2 + 1 and e3 + 3 < st.tl and logb[e3].b == 58 and logb[e3 + 1].b == 49 and logb[e3 + 2].b >= 51 and logb[e3 + 2].b <= 55 and logb[e3 + 3].b == 58)
-                                | then |> digE(j: e3 + 4): e4
-                                    |> if(e4 > e3 + 4 and e4 < st.tl and logb[e4].b == 58)
-                                        | then |> digE(j: e4 + 1): e5
-                                            |> if(e5 > e4 + 1 and e5 + 1 < st.tl and logb[e5].b == 32 and (logb[e5 + 1].b == 43 or logb[e5 + 1].b == 45))
-                                                | then |> digE(j: e5 + 2): e6
-                                                    |> if(e6 > e5 + 2 and e6 < st.tl and logb[e6].b == 93)
-                                                        | then |> std/grid:stored { cnts[12].v: cnts[12].v + 1 }
-                                                            |> sc13(i: e6 + 1): r -> r
-                                                        | else |> sc13(i: i + 1): r -> r
-                                                | else |> sc13(i: i + 1): r -> r
-                                        | else |> sc13(i: i + 1): r -> r
-                                | else |> sc13(i: i + 1): r -> r
-                        | else |> sc13(i: i + 1): r -> r
-                | else |> sc13(i: i + 1): r -> r
-        | else |> sc13(i: i + 1): r -> r
-| else -> 0
-
-// wdrE — end of \w+ run
-pub tor wdrE { j: i64 } -> i64
-wdrE = if(j < st.tl and ((logb[j].b >= 48 and logb[j].b <= 57) or (logb[j].b >= 97 and logb[j].b <= 122) or (logb[j].b >= 65 and logb[j].b <= 90) or logb[j].b == 95))
-| then |> wdrE(j: j + 1): r -> r
-| else -> j
-
-// runp — all 13 scans, sum into st.tot
+// runp — the fused scan, then sum into st.tot
 pub tor runp { } -> i64
-runp = sc1(i: 0): _
-    |> scalt(i: 0, p: 1, a0: 10, na: 17, ci: 1): _
-    |> scalt(i: 0, p: 2, a0: 17, na: 20, ci: 1): _
-    |> sc4(i: 0): _
-    |> sc5(i: 0): _
-    |> sc6(i: 0): _
-    |> scalt(i: 0, p: 6, a0: 20, na: 22, ci: 1): _
-    |> scalt(i: 0, p: 7, a0: 22, na: 25, ci: 1): _
-    |> sc9(i: 0): _
-    |> sc10(i: 0): _
-    |> sc11(i: 0): _
-    |> sc12(i: 0): _
-    |> sc13(i: 0): _
+runp = fuse(i: 0, n: @as(u32, @intCast(st.tl))): _
     |> sumc(i: 0): _ -> 0
 
 // sumc — accumulate cnts into st.tot
-pub tor sumc { i: i64 } -> i64
+pub tor sumc { i: u32 } -> i64
 sumc = if(i < 13)
-| then |> std/store:stored { st.tot: st.tot + cnts[i].v }
+| then |> std/store:stored { st.tot: st.tot + cv[i] }
     |> sumc(i: i + 1): r -> r
 | else -> 0
 
-// clrc — reset per-run counters
-pub tor clrc { i: i64 } -> i64
+// clrc — reset per-run counters and resume cursors
+pub tor clrc { i: u32 } -> i64
 clrc = if(i < 13)
-| then |> std/grid:stored { cnts[i].v: 0 }
+| then |> std/grid:stored { cv[i]: 0, rs[i]: 0 }
     |> clrc(i: i + 1): r -> r
 | else -> 0
 
@@ -571,6 +702,11 @@ stw(e: 0, t: "GET"): _
 |> atw(e: 22, t: "get"): _
 |> atw(e: 23, t: "post"): _
 |> atw(e: 24, t: "put"): _
+// c9 = email local-part class [a-zA-Z0-9._%+-]
+|> c9r(a: 48, b: 58): _
+|> c9r(a: 65, b: 91): _
+|> c9r(a: 97, b: 123): _
+|> std/grid:stored { c9t[37].v: 1, c9t[43].v: 1, c9t[45].v: 1, c9t[46].v: 1, c9t[95].v: 1 }
 |> genl(i: 0): _
 |> runl(k: 0): _
 |> std/io:print.ln("{{ st.res:d }}")
