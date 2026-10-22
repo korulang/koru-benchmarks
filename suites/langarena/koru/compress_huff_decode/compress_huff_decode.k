@@ -11,20 +11,29 @@ import std/io
 import std/grid
 import std/store
 
-std/grid:new(pat, size: 11) { b: 0[i64] }
-std/grid:new(dat, size: 1000003) { b: 0[i64] }
+std/grid:new(pat, size: 11) { b: 0[u8] }
+std/grid:new(dat, size: 1000003) { b: 0[u8] }
 std/grid:new(frq, size: 256) { v: 0[i64] }
 std/grid:new(hn, size: 512) { fr: 0[i64], bv: 0[i64], lf: 0[i64], l: 0[i64], r: 0[i64] }
 std/grid:new(hl, size: 512) { v: 0[i64] }
 std/grid:new(cod, size: 256) { c: 0[i64], l: 0[i64] }
-std/grid:new(out, size: 300000) { b: 0[i64] }
-std/grid:new(dec, size: 1000003) { b: 0[i64] }
+std/grid:new(out, size: 300000) { b: 0[u8] }
+std/grid:new(dec, size: 1000003) { b: 0[u8] }
+std/grid:slice(hnl) { hn.l }
+std/grid:slice(hnr) { hn.r }
+std/grid:slice(hnlf) { hn.lf }
+std/grid:slice(hnbv) { hn.bv }
+std/grid:slice(outb) { out.b }
+std/grid:slice(decb) { dec.b }
 std/store:new(st) { res: 0[i64], n: 1000003[i64], p: 0[i64], cb: 0[i64], bp: 0[i64], bits: 0[i64], t1: 0[i64], t2: 0[i64], t3: 0[i64], nn: 0[i64], ln: 0[i64], acc: 0[i64], ii: 0[i64], pf: 0[i64], bc: 0[i64], pr: 0[i64], ds: 0[i64], cur: 0[i64], el: 0[i64], ok: 0[i64] }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
+
+pub tor idv { v: i64 } -> i64
+idv -> v
 
 // genl — test_data[i] = "ABRACADABRA"[i % 11]
 pub tor genl { i: i64 } -> i64
@@ -41,7 +50,7 @@ zfr = std/grid:stored { frq[i].v: 0 }
         | else |> ret0(): r -> r
 
 pub tor cntb { i: i64 } -> i64
-cntb = std/grid:stored { frq[dat[i].b].v: frq[dat[i].b].v + 1 }
+cntb = std/grid:stored { frq[@as(usize, @intCast(dat[i].b))].v: frq[@as(usize, @intCast(dat[i].b))].v + 1 }
     |> if(i < st.n - 1)
         | then |> cntb(i: i + 1): r -> r
         | else |> ret0(): r -> r
@@ -181,14 +190,14 @@ hwk = if(hn[n].lf == 1)
 pub tor henc { i: i64, k: i64 } -> i64
 henc = if(k == 0)
 | then |> if(i < st.n)
-    | then |> std/store:stored { st.t1: dat[i].b }
+    | then |> std/store:stored { st.t1: @as(i64, dat[i].b) }
         |> std/store:stored { st.t2: cod[st.t1].c }
         |> henc(i, k: cod[st.t1].l): r -> r
     | else |> ret0(): r -> r
 | else |> std/store:stored { st.cb: st.cb + @rem(@divFloor(st.t2, @as(i64, 1) << @as(u6, @intCast(k - 1))), 2) * (@as(i64, 1) << @as(u6, @intCast(7 - st.bp))) }
     |> std/store:stored { st.bits: st.bits + 1 }
     |> if(st.bp == 7)
-        | then |> std/grid:stored { out[st.p].b: st.cb }
+        | then |> std/grid:stored { out[st.p].b: @as(u8, @intCast(st.cb)) }
             |> std/store:stored { st.p: st.p + 1 }
             |> std/store:stored { st.cb: 0 }
             |> std/store:stored { st.bp: 0 }
@@ -204,7 +213,7 @@ henc = if(k == 0)
 // appends current_byte as-is); records encoded length
 pub tor hfl { } -> i64
 hfl = if(st.bp > 0)
-| then |> std/grid:stored { out[st.p].b: st.cb }
+| then |> std/grid:stored { out[st.p].b: @as(u8, @intCast(st.cb)) }
     |> std/store:stored { st.el: st.p + 1 }
     |> ret0(): r -> r
 | else |> std/store:stored { st.el: st.p }
@@ -226,59 +235,35 @@ enc1 = zfr(i: 0): _
     |> ret0(): _ -> 0
 
 // ---- decode: bit-by-bit tree walk ----
-// Single self-recursive tor: per bit, descend left(0)/right(1),
-// emit on leaf (only when bv != 0 — the freq-0 dummy quirk), reset
-// to root, advance the cursor. All tails call hdec so it lowers.
-// adv-inlined: bp2==0 -> hdec(b+1, 7); else -> hdec(b, bp2-1).
-pub tor hdec { b: i64, bp2: i64 } -> i64
-hdec = if(st.pr < st.bc)
-| then |> if(b < st.el)
-    | then |> std/store:stored { st.t2: @rem(@divFloor(out[b].b, @as(i64, 1) << @as(u6, @intCast(bp2))), 2) }
-        |> std/store:stored { st.pr: st.pr + 1 }
-        |> if(st.t2 == 1)
-            | then |> std/store:stored { st.cur: hn[st.cur].r }
-                |> if(hn[st.cur].lf == 1)
-                    | then |> if(hn[st.cur].bv != 0)
-                        | then |> std/grid:stored { dec[st.ds].b: hn[st.cur].bv }
-                            |> std/store:stored { st.ds: st.ds + 1 }
-                            |> std/store:stored { st.cur: hl[0].v }
-                            |> if(bp2 == 0)
-                                | then |> hdec(b: b + 1, bp2: 7): r -> r
-                                | else |> hdec(b, bp2: bp2 - 1): r -> r
-                        | else |> std/store:stored { st.cur: hl[0].v }
-                            |> if(bp2 == 0)
-                                | then |> hdec(b: b + 1, bp2: 7): r -> r
-                                | else |> hdec(b, bp2: bp2 - 1): r -> r
-                    | else |> if(bp2 == 0)
-                        | then |> hdec(b: b + 1, bp2: 7): r -> r
-                        | else |> hdec(b, bp2: bp2 - 1): r -> r
-            | else |> std/store:stored { st.cur: hn[st.cur].l }
-                |> if(hn[st.cur].lf == 1)
-                    | then |> if(hn[st.cur].bv != 0)
-                        | then |> std/grid:stored { dec[st.ds].b: hn[st.cur].bv }
-                            |> std/store:stored { st.ds: st.ds + 1 }
-                            |> std/store:stored { st.cur: hl[0].v }
-                            |> if(bp2 == 0)
-                                | then |> hdec(b: b + 1, bp2: 7): r -> r
-                                | else |> hdec(b, bp2: bp2 - 1): r -> r
-                        | else |> std/store:stored { st.cur: hl[0].v }
-                            |> if(bp2 == 0)
-                                | then |> hdec(b: b + 1, bp2: 7): r -> r
-                                | else |> hdec(b, bp2: bp2 - 1): r -> r
-                    | else |> if(bp2 == 0)
-                        | then |> hdec(b: b + 1, bp2: 7): r -> r
-                        | else |> hdec(b, bp2: bp2 - 1): r -> r
-    | else |> ret0(): r -> r
-| else -> 0
+// Same algorithm as the reference (per bit: descend, emit on leaf,
+// reset to root, bw: bw2) but register-carried: b/bp2/cur/ds/pr/root are tor
+// params (self-loop lowers them to registers, PERF recipe 6), node
+// columns are borrowed slices (verbatim reads, no floor), child select
+// is a bound two-way if (recipe 3). dec index ds is a param, not a
+// store row — bumped only on emit.
+pub tor hdec { b: i64, bp2: i64, cur: i64, ds: i64, pr: i64, root: i64 } -> i64
+hdec = if(pr < st.bc and b < st.el)
+| then |> idv(v: @as(i64, @intCast((outb[@as(usize, @intCast(b))] >> @as(u3, @intCast(bp2))) & 1))): bit
+    |> idv(v: if(bit == 1) hnr[@as(usize, @intCast(cur))] else hnl[@as(usize, @intCast(cur))]): nc
+    |> if(hnlf[@as(usize, @intCast(nc))] == 1)
+        | then |> if(hnbv[@as(usize, @intCast(nc))] != 0)
+            | then |> std/grid:stored { decb[@as(usize, @intCast(ds))]: @as(u8, @intCast(hnbv[@as(usize, @intCast(nc))])) }
+                |> if(bp2 == 0)
+                    | then |> hdec(b: b + 1, bp2: 7, cur: root, ds: ds + 1, pr: pr + 1, root): r -> r
+                    | else |> hdec(b, bp2: bp2 - 1, cur: root, ds: ds + 1, pr: pr + 1, root): r -> r
+            | else |> if(bp2 == 0)
+                | then |> hdec(b: b + 1, bp2: 7, cur: root, ds, pr: pr + 1, root): r -> r
+                | else |> hdec(b, bp2: bp2 - 1, cur: root, ds, pr: pr + 1, root): r -> r
+        | else |> if(bp2 == 0)
+            | then |> hdec(b: b + 1, bp2: 7, cur: nc, ds, pr: pr + 1, root): r -> r
+            | else |> hdec(b, bp2: bp2 - 1, cur: nc, ds, pr: pr + 1, root): r -> r
+| else -> ds
 
 // run1 — one runImpl: rebuild tree from freqs, decode, add length
 pub tor run1 { } -> i64
-run1 = hbuild(): _
-    |> std/store:stored { st.cur: hl[0].v }
-    |> std/store:stored { st.pr: 0 }
-    |> std/store:stored { st.ds: 0 }
-    |> hdec(b: 0, bp2: 7): _
-    |> std/store:stored { st.res: st.res + st.ds }
+run1 = hdec(b: 0, bp2: 7, cur: hl[0].v, ds: 0, pr: 0, root: hl[0].v): dsf
+    |> std/store:stored { st.ds: dsf }
+    |> std/store:stored { st.res: st.res + dsf }
     |> ret0(): _ -> 0
 
 // runl — 420 runs
@@ -309,17 +294,17 @@ fin = if(st.ds == st.n)
 
 // ---- driver ----
 ret0(): _
-|> std/grid:stored { pat[0].b: 65 }
-|> std/grid:stored { pat[1].b: 66 }
-|> std/grid:stored { pat[2].b: 82 }
-|> std/grid:stored { pat[3].b: 65 }
-|> std/grid:stored { pat[4].b: 67 }
-|> std/grid:stored { pat[5].b: 65 }
-|> std/grid:stored { pat[6].b: 68 }
-|> std/grid:stored { pat[7].b: 65 }
-|> std/grid:stored { pat[8].b: 66 }
-|> std/grid:stored { pat[9].b: 82 }
-|> std/grid:stored { pat[10].b: 65 }
+|> std/grid:stored { pat[0].b: @as(u8, 65) }
+|> std/grid:stored { pat[1].b: @as(u8, 66) }
+|> std/grid:stored { pat[2].b: @as(u8, 82) }
+|> std/grid:stored { pat[3].b: @as(u8, 65) }
+|> std/grid:stored { pat[4].b: @as(u8, 67) }
+|> std/grid:stored { pat[5].b: @as(u8, 65) }
+|> std/grid:stored { pat[6].b: @as(u8, 68) }
+|> std/grid:stored { pat[7].b: @as(u8, 65) }
+|> std/grid:stored { pat[8].b: @as(u8, 66) }
+|> std/grid:stored { pat[9].b: @as(u8, 82) }
+|> std/grid:stored { pat[10].b: @as(u8, 65) }
 |> genl(i: 0): _
 |> enc1(): _
 |> runl(k: 0): _
