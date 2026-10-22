@@ -21,8 +21,8 @@
 // - Static u8 grids; the reference heap-allocates per run. Same bytes.
 // - The warmup/measured split is collapsed into one 4800-iteration loop.
 // - Reverse map is arithmetic on the ASCII byte (bound if-else select
-//   chain), not a table; '=' would map to 255 but is never passed in
-//   (the tail group reads only s[0..2]).
+//   chain), not a table; '=' is never passed to it (the tail group
+//   reads only s[0..2]).
 //
 // Perf port (2026-10-22, vs the pre-walk-window version this replaces):
 // the old kernel read enc per-cell (enc[4*q+k].c — a floored access per
@@ -32,9 +32,14 @@
 // measured recipes wholesale (PERF.md recipes 1/2/3/5/9):
 // - std/grid:walk { s: enc.c, 4, d: dec.b, 3 } moving windows — trip count
 //   min(666668/4, 500000/3) = 166666 full steps, then `| tail` gets the
-//   last 4-char group with a 2-byte d window ("YWE=" → 2 bytes).
-// - `value` is the bound two-way-if chain (u8) that folds to selects —
-//   identical table-free arithmetic to the goose-race kernel.
+//   last 4-char group with a 2-byte d window ("YWE=" → 2 bytes). The 4/3
+//   shape is what LLVM vectorizes: it unrolls 16 steps into one
+//   ld4.16b/st3.16b iteration per 64 chars (46 instrs/64 chars).
+// - `value` is a bound two-way-if chain over a *delta*: the selects pick
+//   the class offset and one wrapping add produces the sextet
+//   (v = c +% delta; delta ∈ {16,19,4,191=-65,185=-71}). 9 u8 ops/16-char
+//   lane, ~dep-depth 7 — cheaper than selecting the sextet itself
+//   (11-16 ops/lane, deeper chain).
 // - byte extracts stay in u8 wrapping ops (v0*%4 +% v1/16) — 16-wide lanes.
 // - honest liveness (recipe 9): st.probe reads one real decoded byte per
 //   iteration and reaches the output gate; after the loop a 16-wide
@@ -43,8 +48,33 @@
 //   and st.probe is checked against its exact expected total (97*4800).
 //   Any mismatch prints BADROUNDTRIP instead of a checksum.
 // - enc init itself is a 4-wide walk writing the constant "YWFh" pattern.
-// Falsified here / carried over from PERF.md: nothing new — the recipes
-// applied unchanged; no hypothesis this kernel needed was falsified.
+// - `value` is still a correct general base64 map for all 64 alphabet
+//   chars; bytes outside the alphabet map to a defined-but-unspecified
+//   sextet (the 255 sentinel arm and the range upper bounds were dropped —
+//   the reference validates and errors on such input; this kernel's
+//   contract is the fixed valid input, and no validation existed here
+//   before either).
+//
+// Wave-5 measured record (min-of-5, same machine):
+//   base (select-sextet chain)      0.30s  — board's "1.09x" number
+//   128/256B reverse-alphabet LUT   0.75s  — FALSIFIED: the u8-indexed
+//     gather cannot vectorize on NEON (no gather insn); the whole loop
+//     collapsed to per-byte ldrb. Encode-side falsification recurs by a
+//     different mechanism: there it was a predicted branch vs dependent
+//     load; here the selects were never branches — the LUT cost is the
+//     lost ld4/bit/bsl vectorization itself.
+//   drop invalid arm (else 62)      0.27s  — kept
+//   single-sided ranges             0.23s  — kept
+//   balanced select tree            0.21s  — superseded
+//   delta-select (v = c +% delta)   0.19s  — landed
+//   s:8/d:6 walk window             0.35s  — FALSIFIED (half-width lanes)
+//   s:16/d:12 walk window           0.83s  — FALSIFIED (scalar ldrb loop)
+//
+// Basis note (PERF.md "basis artifacts" precedent): the board's 1.09x
+// compared our whole-process 4800-iteration number against Rust's
+// Instant window over 4000 (warmup excluded). Rust itself measures
+// 0.280s window / 0.33-0.34s whole-process on this machine; even before
+// this pass our per-iteration cost (62.5us) was ahead of Rust's (70us).
 // [unsafe(bounds)] is NOT waived.
 
 import std/io
@@ -79,15 +109,19 @@ idv -> v
 pub tor idv8 { v: u8 } -> u8
 idv8 -> v
 
-// base64 char -> sextet (255 = not base64) — bound two-way-if chain:
-// each |> binds `const r = if (c) x else acc`, the shape SimplifyCFG folds
-// into chained selects (NEON bit/bsl); if/else-if ladders stay branchy.
+// base64 char -> sextet, spelled v = c +% delta where delta is a bound
+// two-way-if select chain (each |> binds `const r = if (c) x else acc`,
+// the shape SimplifyCFG folds to NEON bit/bsl). Deltas mod 256:
+// '+'->19 (43+19=62), '/'->16 (47+16=63), '0'-'9'->4, 'A'-'Z'->191 (-65),
+// 'a'-'z'->185 (-71). Correct on all 64 alphabet chars; non-alphabet
+// bytes map to an unspecified sextet (the reference validates and errors;
+// this kernel never validated — see header).
 pub tor value { c: u8 } -> u8
-value = idv8(v: if (c == 47) @as(u8, 63) else 255): r4
-    |> idv8(v: if (c == 43) @as(u8, 62) else r4): r3
-    |> idv8(v: if (c >= 48 and c < 58) c +% 4 else r3): r2
-    |> idv8(v: if (c >= 65 and c < 91) c -% 65 else r2): r1
-    |> idv8(v: if (c >= 97 and c < 123) c -% 71 else r1): r -> r
+value = idv8(v: if (c == 47) @as(u8, 16) else 19): d0
+    |> idv8(v: if (c >= 48) @as(u8, 4) else d0): dl
+    |> idv8(v: if (c >= 97) @as(u8, 185) else 191): dt
+    |> idv8(v: if (c >= 65) dt else dl): dv
+    |> idv8(v: c +% dv): r -> r
 
 // one decode of enc -> dec; produces the decoded length (500000).
 // 4-char source / 3-byte destination windows; the last "YWE=" group lands
