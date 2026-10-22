@@ -8,9 +8,10 @@
 //   run:    acc += djb2("%.7f", c[n/2][n/2]) per iteration, mod 2^32
 //
 // Faithfulness differences, stated:
-// - The reference materialises t = transpose(b) then zips rows; ours reads
-//   b[k][j] directly. Transposition is a layout optimisation — identical
-//   products in identical k-ascending order, bit-identical sum.
+// - bt = transpose(b) is materialised once up front, matching the
+//   reference's t = transpose(b) + row-zip: the inner loop then streams
+//   both operands sequentially — identical products in identical
+//   k-ascending order, bit-identical sum.
 // - Matrices are flat static grids (i*n+j), not Array(Array(Float64)) —
 //   same arithmetic, no row-pointer indirection.
 // - The warmup/measured split is collapsed into one 12-iteration loop: the
@@ -61,6 +62,11 @@ checksum-f64 = if(v < 0.0)
 std/grid:new(a, size: 810000) { v: 0.0[f64] }
 std/grid:new(b, size: 810000) { v: 0.0[f64] }
 std/grid:new(c, size: 810000) { v: 0.0[f64] }
+std/grid:new(bt, size: 810000) { v: 0.0[f64] }
+
+std/grid:slice(a_s) { a.v }
+std/grid:slice(bt_s) { bt.v }
+std/grid:slice(c_s) { c.v }
 
 for(0..900)
 ! each i |> for(0..900)
@@ -70,13 +76,19 @@ for(0..900)
         b[i * 900 + j].v: 1.0 / 900.0 / 900.0 * @as(f64, @floatFromInt(@as(i64, @intCast(i)) - @as(i64, @intCast(j)))) * @as(f64, @floatFromInt(@as(i64, @intCast(i)) + @as(i64, @intCast(j))))
     }
 
+for(0..900)
+! each i |> for(0..900)
+    ! each j |> std/grid:stored {
+        bt_s[@as(usize, @intCast(j * 900 + i))]: b[i * 900 + j].v
+    }
+
 capture { acc: 0[i64] }
 ! as g |> for(0..12)
     ! each it |> for(0..900)
         ! each i |> for(0..900)
             ! each j |> capture { s: 0.0[f64] }
                 ! as ai |> for(0..900)
-                    ! each k |> captured { s: ai.s + a[i * 900 + k].v * b[k * 900 + j].v }
-                | captured r |> std/grid:stored { c[i * 900 + j].v: r.s }
-        | done |> checksum-f64(v: c[405450].v): cs |> captured { acc: @rem(g.acc + cs, 4294967296) }
+                    ! each k |> captured { s: ai.s + a_s[@as(usize, @intCast(i * 900 + k))] * bt_s[@as(usize, @intCast(j * 900 + k))] }
+                | captured r |> std/grid:stored { c_s[@as(usize, @intCast(i * 900 + j))]: r.s }
+        | done |> checksum-f64(v: c_s[405450]): cs |> captured { acc: @rem(g.acc + cs, 4294967296) }
 | captured res |> std/io:print.ln("{{ res.acc:d }}")
