@@ -21,6 +21,24 @@
 //   (same collapse as matmul_single and etc_sieve).
 // - The base64 alphabet is arithmetic on the index (A-Z/a-z/0-9/+// ranges),
 //   not a table — identical bytes emitted.
+//
+// Wave-5: SWAR arithmetic encode (u8 delta select-chain, measured):
+//   b64ch is now pure u8 arithmetic — selects the ADDEND (delta) via a
+//   2-way-if `|>` chain (recipe 3): 65 | 71 | 252(=-4) | 3v+51 for v>=62
+//   (since out = 4v-205 for '+'/'/' => delta = 3v+51, wrapping). Extraction
+//   is u8 `/` `%` `*%` `+%`. Emitted NEON is ~47 ops/48B vs ~57 for the
+//   old ladder — 0.33s -> 0.27s (min-of-5).
+// Falsified this wave:
+//   - Linear delta-sum  delta = 65+6[v26]-75[v52]-15[v62]+3[v63]:
+//     0.35s — slower than both (probe /tmp/b64e/delta).
+//   - Output-select variant (select v+65|v+71|v-4|4v-205): identical 0.27s
+//     (probe /tmp/b64e/sel4); delta form kept, equal codegen.
+//   - "All-'a' flatters the ladder": FALSIFIED. Same binaries on mixed
+//     input (i*37+11 mod 256, probes /tmp/b64e/mixl,/tmp/b64e/mixs) give
+//     identical times — 0.33s ladder / 0.27s swar. The ladder emits NO
+//     branches (SimplifyCFG folded it to selects; the loop is data-
+//     independent NEON) — it wins vs LUT because it vectorizes, not
+//     because a predictor sees the same arm.
 // - The tail group is written literally for size=500000 (mod 3 = 2 → i0 i1 i2
 //   '='), the same specialisation the reference's Encoder.calcSize fixes.
 // - The checksum feeds the first four bytes READ BACK from the grids, not
@@ -51,16 +69,15 @@ djb2-digits = if(n < 10)
 | else |> djb2-digits(n: @divTrunc(n, 10), h): h2 |> djb2-byte(h: h2, b: 48 + @rem(n, 10)): r -> r
 
 // base64 index 0..63 -> ASCII byte: A-Z(65..) a-z(+71) 0-9(-4) +(43) /(47)
-pub tor b64ch { v: i64 } -> i64
-b64ch = if(v < 26)
-| then -> 65 + v
-| else |> if(v < 52)
-    | then -> 71 + v
-    | else |> if(v < 62)
-        | then -> -4 + v
-        | else |> if(v == 62)
-            | then -> 43
-            | else -> 47
+// SWAR: select the addend (u8 wrapping); v>=62 => out = 4v-205 => delta 3v+51
+pub tor idv8 { v: u8 } -> u8
+idv8 -> v
+
+pub tor b64ch { v: u8 } -> u8
+b64ch = idv8(v: 65): r3
+    |> idv8(v: if (v >= 26) 71 else r3): r2
+    |> idv8(v: if (v >= 52) 252 else r2): r1
+    |> idv8(v: if (v >= 62) v *% 3 +% 51 else r1): r -> v +% r
 
 std/grid:new(inp, size: 500000) { b: 97[u8] }
 std/grid:new(out, size: 666668) { c: 0[u8] }
@@ -68,20 +85,20 @@ std/grid:new(out, size: 666668) { c: 0[u8] }
 capture { acc: 0[i64] }
 ! as g |> for(0..6000)
     ! each it |> for(0..166666)
-        ! each q |> b64ch(v: @divTrunc(@as(i64, inp[3 * q].b), 4)): c0
-            |> b64ch(v: @rem(@as(i64, inp[3 * q].b), 4) * 16 + @divTrunc(@as(i64, inp[3 * q + 1].b), 16)): c1
-            |> b64ch(v: @rem(@as(i64, inp[3 * q + 1].b), 16) * 4 + @divTrunc(@as(i64, inp[3 * q + 2].b), 64)): c2
-            |> b64ch(v: @rem(@as(i64, inp[3 * q + 2].b), 64)): c3
-            |> std/grid:stored { out[4 * q].c: @as(u8, @intCast(c0)) }
-            |> std/grid:stored { out[4 * q + 1].c: @as(u8, @intCast(c1)) }
-            |> std/grid:stored { out[4 * q + 2].c: @as(u8, @intCast(c2)) }
-            |> std/grid:stored { out[4 * q + 3].c: @as(u8, @intCast(c3)) }
-        | done |> b64ch(v: @divTrunc(@as(i64, inp[499998].b), 4)): t0
-            |> b64ch(v: @rem(@as(i64, inp[499998].b), 4) * 16 + @divTrunc(@as(i64, inp[499999].b), 16)): t1
-            |> b64ch(v: @rem(@as(i64, inp[499999].b), 16) * 4): t2
-            |> std/grid:stored { out[666664].c: @as(u8, @intCast(t0)) }
-            |> std/grid:stored { out[666665].c: @as(u8, @intCast(t1)) }
-            |> std/grid:stored { out[666666].c: @as(u8, @intCast(t2)) }
+        ! each q |> b64ch(v: inp[3 * q].b / 4): c0
+            |> b64ch(v: inp[3 * q].b % 4 *% 16 +% inp[3 * q + 1].b / 16): c1
+            |> b64ch(v: inp[3 * q + 1].b % 16 *% 4 +% inp[3 * q + 2].b / 64): c2
+            |> b64ch(v: inp[3 * q + 2].b % 64): c3
+            |> std/grid:stored { out[4 * q].c: c0 }
+            |> std/grid:stored { out[4 * q + 1].c: c1 }
+            |> std/grid:stored { out[4 * q + 2].c: c2 }
+            |> std/grid:stored { out[4 * q + 3].c: c3 }
+        | done |> b64ch(v: inp[499998].b / 4): t0
+            |> b64ch(v: inp[499998].b % 4 *% 16 +% inp[499999].b / 16): t1
+            |> b64ch(v: inp[499999].b % 16 *% 4): t2
+            |> std/grid:stored { out[666664].c: t0 }
+            |> std/grid:stored { out[666665].c: t1 }
+            |> std/grid:stored { out[666666].c: t2 }
             |> std/grid:stored { out[666667].c: 61 }
             |> captured { acc: @rem(g.acc + 666668, 4294967296) }
 | captured res
