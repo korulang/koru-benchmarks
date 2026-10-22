@@ -6,9 +6,55 @@
 //
 // A(i,j) = 1 / (s(s+1)/2 + i + 1), s = i+j — the CLBG spectral-norm
 // power-iteration kernel. Pure f64 grids; the two-step AtA is staged
-// through gsrc/gw scratch rows, exact operation order as the
+// through the gw scratch row, exact operation order as the
 // reference's eval_A_times_u / eval_At_times_u pair.
 //
+// Optimizations and faithfulness diffs vs the original port:
+//
+// - CANONICAL FOR + CAPTURED ACCUMULATOR: the column loops are spelled
+//   `capture { s } ! as a |> for(0..1200) ! each j |> captured { s: ... }`,
+//   which lowers to a Zig `for (0..1200)` with a struct-field sum —
+//   the shape whose LLVM emits the SAME partially-vectorized inner
+//   loop the Rust reference's own binary carries: vector
+//   add.2d/ucvtf.2d/fmul.2d/fdiv.2d computing 8 elements per
+//   iteration, then 8 sequential scalar fadd's keeping the reduction
+//   IN ORDER (disasm receipts /tmp/sn_disasm_*.txt; ~55 instrs/8
+//   elements vs Rust's ~52). The original spelled the loops as tor
+//   self-calls accumulating through the fs.sum store row inside a
+//   `while(true)` — correct but entirely scalar.
+// - SLICE BORROWS (recipe 2): gu_s/gv_s/gw_s borrow the f64 columns;
+//   inner reads are raw index, no __koru_at floor per element.
+// - GSRC STAGING REMOVED: the original copied gu/gv into a gsrc row so
+//   one column tor could serve both passes. Per-source inner loops
+//   make the copies pure traffic — same reads, same values,
+//   bit-identical. Two 1200-element copies per run deleted.
+// - Denominator evaluated per element exactly as the reference does
+//   (f64 s*(s+1)/2 + row + 1, 1.0/denom first, then *src[j]); the sum
+//   order is unchanged — one in-order fadd per element, no
+//   reassociation, no extra accumulators.
+//
+// MEASUREMENT-BASIS FINDING (wave-4): the benchmark's "Rust 0.689s"
+// is the harness's measured-iterations number — 132 runs, warmup
+// EXCLUDED. The Koru whole-process number covers all 158 runs. On the
+// identical basis (whole-process, min-of-5 interleaved):
+//   Rust 0.81-0.83 / this kernel 0.80-0.83 / original port 0.80-0.83
+// — all three tie. The kernel is bound by the serial in-order fadd
+//   chain (~0.88ns/elem ~= 4cyc x 910M elems ~= 0.80s), a floor no
+//   legal rewrite can cross: reassociating the reduction would change
+//   the checksum. A 132-run probe build (/tmp/sn_k132) matches Rust's
+//   measured-only basis at 0.68s vs its 0.689-0.702s.
+//
+// Falsified on this kernel (kept for the map):
+// - Param-carried d/t incremental denominator (d += t, i64, exact —
+//   verified bit-identical for all 1200x1200 via /tmp/sn_dcheck.py)
+//   inside the tor self-loop shape: checksum green, ~0.81s — correct
+//   but not faster; the denominator math was never the constraint.
+// - Vectorized fdiv.2d as a TIME lever: emitted, verified, and still
+//   ~0.80s — off-chain throughput hides under the fadd chain; kept
+//   anyway because it is the minimal-pressure shape.
+// - The original port was ALREADY at the floor: its 0.82s covered 158
+//   runs. There was no kernel deficit; the gap was accounting.
+
 import std/io
 import std/grid
 import std/store
@@ -16,86 +62,64 @@ import std/fmt
 
 std/grid:new(gu, size: 1200) { v: 0.0[f64] }
 std/grid:new(gv, size: 1200) { v: 0.0[f64] }
-std/grid:new(gsrc, size: 1200) { v: 0.0[f64] }
 std/grid:new(gw, size: 1200) { v: 0.0[f64] }
 std/store:new(st) { t3: 0[i64] }
-std/store:new(fs) { sum: 0.0[f64], vbv: 0.0[f64], vv: 0.0[f64] }
+std/store:new(fs) { vbv: 0.0[f64], vv: 0.0[f64] }
+
+std/grid:slice(gu_s) { gu.v }
+std/grid:slice(gv_s) { gv.v }
+std/grid:slice(gw_s) { gw.v }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
 
-// ---- eval_A_times_u: rowa walks i, cola accumulates over j ----
+// ---- eval_A_times_u: out[i] = sum_j A(i,j)*src[j] ----
+// rau: gw = A·gu ; rav: gw = A·gv
 
-pub tor cola { i: i64, j: i64 } -> i64
-cola = if(j < 1200)
-| then |> std/store:stored { fs.sum: fs.sum + 1.0 / ((@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j))) * (@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j)) + 1.0) / 2.0 + @as(f64, @floatFromInt(i)) + 1.0) * gsrc[j].v }
-    |> cola(i, j: j + 1): r -> r
-| else -> 0
+pub tor rau { } -> i64
+rau = for(0..1200)
+    ! each i |> capture { s: 0.0[f64] }
+        ! as a |> for(0..1200)
+            ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j))) * (@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j)) + 1.0) / 2.0 + @as(f64, @floatFromInt(i)) + 1.0) * gu_s[j] }
+        | captured r |> std/grid:stored { gw_s[i]: r.s }
+    | done |> ret0(): _ -> 0
 
-pub tor rowa { i: i64 } -> i64
-rowa = if(i < 1200)
-| then |> std/store:stored { fs.sum: 0.0 }
-    |> cola(i, j: 0): _
-    |> std/grid:stored { gw[i].v: fs.sum }
-    |> rowa(i: i + 1): r -> r
-| else -> 0
+pub tor rav { } -> i64
+rav = for(0..1200)
+    ! each i |> capture { s: 0.0[f64] }
+        ! as a |> for(0..1200)
+            ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j))) * (@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j)) + 1.0) / 2.0 + @as(f64, @floatFromInt(i)) + 1.0) * gv_s[j] }
+        | captured r |> std/grid:stored { gw_s[i]: r.s }
+    | done |> ret0(): _ -> 0
 
-// ---- eval_At_times_u over gw: colt accumulates A(j,i)*gw[j] ----
+// ---- eval_At_times_u: out[i] = sum_j A(j,i)*gw[j] ----
+// rtv: gv = At·gw ; rtu: gu = At·gw — denominator's +row+1 term
+// follows j (the A row index), i.e. eval_a(j, i) as the reference.
 
-// coltv — writes into gv (v_new)
-pub tor coltv { i: i64, j: i64 } -> i64
-coltv = if(j < 1200)
-| then |> std/store:stored { fs.sum: fs.sum + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw[j].v }
-    |> coltv(i, j: j + 1): r -> r
-| else -> 0
+pub tor rtv { } -> i64
+rtv = for(0..1200)
+    ! each i |> capture { s: 0.0[f64] }
+        ! as a |> for(0..1200)
+            ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw_s[j] }
+        | captured r |> std/grid:stored { gv_s[i]: r.s }
+    | done |> ret0(): _ -> 0
 
-pub tor rowtv { i: i64 } -> i64
-rowtv = if(i < 1200)
-| then |> std/store:stored { fs.sum: 0.0 }
-    |> coltv(i, j: 0): _
-    |> std/grid:stored { gv[i].v: fs.sum }
-    |> rowtv(i: i + 1): r -> r
-| else -> 0
-
-// coltu — writes into gu (u_new)
-pub tor coltu { i: i64, j: i64 } -> i64
-coltu = if(j < 1200)
-| then |> std/store:stored { fs.sum: fs.sum + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw[j].v }
-    |> coltu(i, j: j + 1): r -> r
-| else -> 0
-
-pub tor rowtu { i: i64 } -> i64
-rowtu = if(i < 1200)
-| then |> std/store:stored { fs.sum: 0.0 }
-    |> coltu(i, j: 0): _
-    |> std/grid:stored { gu[i].v: fs.sum }
-    |> rowtu(i: i + 1): r -> r
-| else -> 0
-
-// ---- gsrc copies ----
-
-pub tor cpu { i: i64 } -> i64
-cpu = if(i < 1200)
-| then |> std/grid:stored { gsrc[i].v: gu[i].v }
-    |> cpu(i: i + 1): r -> r
-| else -> 0
-
-pub tor cpv { i: i64 } -> i64
-cpv = if(i < 1200)
-| then |> std/grid:stored { gsrc[i].v: gv[i].v }
-    |> cpv(i: i + 1): r -> r
-| else -> 0
+pub tor rtu { } -> i64
+rtu = for(0..1200)
+    ! each i |> capture { s: 0.0[f64] }
+        ! as a |> for(0..1200)
+            ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw_s[j] }
+        | captured r |> std/grid:stored { gu_s[i]: r.s }
+    | done |> ret0(): _ -> 0
 
 // onerun — v_new = AtA·u then u_new = AtA·v_new
 pub tor onerun { } -> i64
-onerun = cpu(i: 0): _
-    |> rowa(i: 0): _
-    |> rowtv(i: 0): _
-    |> cpv(i: 0): _
-    |> rowa(i: 0): _
-    |> rowtu(i: 0): _
+onerun = rau(): _
+    |> rtv(): _
+    |> rav(): _
+    |> rtu(): _
     |> ret0(): _ -> 0
 
 // runl — 158 runs (132 measured + 26 warmup)
@@ -107,12 +131,11 @@ runl = if(k < 158)
 
 // ---- checksum: sqrt(vBv / vv) → checksumFloat ----
 
-pub tor dotl { i: i64 } -> i64
+pub tor dotl { i: i64, vbv: f64, vv: f64 } -> i64
 dotl = if(i < 1200)
-| then |> std/store:stored { fs.vbv: fs.vbv + gu[i].v * gv[i].v }
-    |> std/store:stored { fs.vv: fs.vv + gv[i].v * gv[i].v }
-    |> dotl(i: i + 1): r -> r
-| else -> 0
+| then |> dotl(i: i + 1, vbv: vbv + gu_s[@as(usize, @intCast(i))] * gv_s[@as(usize, @intCast(i))], vv: vv + gv_s[@as(usize, @intCast(i))] * gv_s[@as(usize, @intCast(i))]): r -> r
+| else |> std/store:stored { fs.vbv: vbv, fs.vv: vv }
+    |> ret0(): _ -> 0
 
 // djh — DJB2 a scoped string into st.t3 (u32 arithmetic)
 pub tor djh { t: string<*@scoped> } -> i64
@@ -131,12 +154,10 @@ csfv = std/fmt:ln("{{ v:d:.7 }}"): s
 
 // u = v = 1.0
 for(0..1200)
-! each i |> std/grid:stored { gu[i].v: 1.0 }
-    |> std/grid:stored { gv[i].v: 1.0 }
+! each i |> std/grid:stored { gu_s[i]: 1.0 }
+    |> std/grid:stored { gv_s[i]: 1.0 }
 
 runl(k: 0): _
-|> std/store:stored { fs.vbv: 0.0 }
-|> std/store:stored { fs.vv: 0.0 }
-|> dotl(i: 0): _
+|> dotl(i: 0, vbv: 0.0, vv: 0.0): _
 |> csfv(v: @sqrt(fs.vbv / fs.vv)): h
 |> std/io:print.ln("{{ h:d }}")
