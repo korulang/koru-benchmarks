@@ -6,9 +6,12 @@
 //   does.
 // The codec is arithmetic — the same deliberately table-free shape Goose's
 // stdlib codec takes ("no x86 vector unit does well for table lookups"):
-// symbol is u8 select-arithmetic, value a u8 range cascade, and the loops
-// are std/grid:walk moving-window reslices, which is what LLVM needs to
-// emit the st3/st4 interleaved vector code. The byte extracts stay in u8
+// symbol and value are bound if-else chains — `|> idv8(v: if (c) x else acc)`
+// emits `const r = if (c) x else acc` per level, the bound two-way-if shape
+// SimplifyCFG folds into chained `select` IR, which NEON lowers to bit/bsl
+// like clang's lowering of Goose's ternary cascade. The loops are
+// std/grid:walk moving-window reslices, which is what LLVM needs to emit
+// the st3/st4 interleaved vector code. The byte extracts stay in u8
 // (wrapping *% — a<<2|b>>4 spelled as v0*%4 +% v1/16) because a u32 pack
 // costs 4-wide lanes where u8 runs 16-wide.
 // Verify: the timed decloop reads one dec byte per iteration (a liveness
@@ -35,22 +38,32 @@ ret0 -> 0
 pub tor idv { v: i64 } -> i64
 idv -> v
 
-// sextet -> base64 char, pure u8 select-arithmetic: 65 + 6*ib + 181*ib
-// - 15*ib - 12*ib never leaves u8 before the +k wrap, which the u16 widen
-// + @rem carries. This exact shape is what LLVM vectorizes; an if/else
-// produce-cascade of the same results does not (measured, 697_024 notes).
-pub tor symbol { b: u8 } -> u8
-symbol -> @as(u8, @intCast(@rem(@as(u16, b) + 65 + 6 * @as(u16, @intFromBool(b >= 26)) + 181 * @as(u16, @intFromBool(b >= 52)) - 15 * @as(u16, @intFromBool(b == 62)) - 12 * @as(u16, @intFromBool(b == 63)), 256)))
+pub tor idv8 { v: u8 } -> u8
+idv8 -> v
 
-// base64 char -> sextet (255 = not base64), u8 range cascade.
+// sextet -> base64 char. Spelled as bound if-else steps — each |> binds a
+// `const r = if (c) x else y` in emitted Zig, and bound two-way ifs are the
+// shape SimplifyCFG folds into `select` IR, which NEON lowers to bit/bsl
+// (measured: select-arithmetic ~12 ops/symbol, this chain ~8 — matching
+// clang's codegen for Goose's ternary cascade). The else-arms carry the
+// accumulated tail, so the chain folds bottom-up: r3 selects the last two
+// symbols, then each range check picks the wider region's value.
+pub tor symbol { b: u8 } -> u8
+symbol = idv8(v: if (b == 63) @as(u8, 47) else 43): r3
+    |> idv8(v: if (b < 62) b -% 4 else r3): r2
+    |> idv8(v: if (b < 52) b +% 71 else r2): r1
+    |> idv8(v: if (b < 26) b +% 65 else r1): r -> r
+
+// base64 char -> sextet (255 = not base64) — same bound if-else chain as
+// symbol: cond's early-return cascade stays CFG diamonds post-SimplifyCFG;
+// bound two-way ifs fold to chained selects (bit/bsl). Ranges accumulate
+// through the else arms low-to-high.
 pub tor value { c: u8 } -> u8
-value = cond(c)
-| c k when k >= 65 and k < 91 -> k - 65
-| c k when k >= 97 and k < 123 -> k - 71
-| c k when k >= 48 and k < 58 -> k + 4
-| c k when k == 43 -> 62
-| c k when k == 47 -> 63
-| c _ -> 255
+value = idv8(v: if (c == 47) @as(u8, 63) else 255): r4
+    |> idv8(v: if (c == 43) @as(u8, 62) else r4): r3
+    |> idv8(v: if (c >= 48 and c < 58) c +% 4 else r3): r2
+    |> idv8(v: if (c >= 65 and c < 91) c -% 65 else r2): r1
+    |> idv8(v: if (c >= 97 and c < 123) c -% 71 else r1): r -> r
 
 // one encode of inp -> enc; produces the encoded length (174764).
 // 3-byte source / 4-byte destination windows, tail writes the '=' pad.
