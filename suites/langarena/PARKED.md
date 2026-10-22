@@ -2,8 +2,8 @@
 
 Non-blocking items discovered while porting. Batch these when convenient;
 none gate a port today. Last updated: after the Compress + Template
-sweep landed — full-suite gate is 67/68 green on main koruc; the only
-red is sort_self (see #11).
+sweep landed. **2026-10-22: full-suite gate is 68/68 green on main
+koruc — sort_self is green now (see #11; the mergeback landed).**
 
 ## Toolchain / language
 
@@ -95,18 +95,13 @@ red is sort_self (see #11).
 
 ## Process / repo state
 
-11. **Mergeback pending.** `read-arm-expr` carries the produce-arm fix
-   (`a7ddcbcb3`), the `std/array:sort` template fix (`0d05d6175`), and
-   the KORU010 arm-column hint (`1e57df218` + `79118140b`);
-   `sweep-trusted-cursor` carries `c7442550a`. Neither is in `main`.
-   The suite gates through `run.sh` on main-repo koruc; kernels are
-   written to compile on main. The `-> grid[i].f` produce shape emits
-   undeclared identifiers on main; the workaround is routing the
-   expression through a call arg (`idv(v: grid[i].f): r -> r`) — call
-   args lower correctly. `sort_self` is the one remaining RED:
-   `std/array:sort` is an `[expand]` template and main never substitutes
-   `${expr}` (emitted Zig carries the literal placeholder) — needs
-   `0d05d6175` to land; no honest `.k` spelling exists in the meantime.
+11. **Mergeback — RESOLVED 2026-10-22.** All four commits are in `main`
+   now (`a7ddcbcb3`, `0d05d6175`, `1e57df218`, `c7442550a` — verified by
+   `git merge-base --is-ancestor`). The branches still exist but their
+   work is landed; `sort_self` is green and the full gate is 68/68. The
+   `-> grid[i].f` produce workaround (`idv(v: grid[i].f): r -> r`) can be
+   retired at leisure — no urgency since the fix it routes around is
+   merged.
 
 12. **LCG draw-order fork.** Zig `nextInt` computes `(last*max)/IM`,
     Crystal computes `last/IM*max` — ulp-boundary draws can differ.
