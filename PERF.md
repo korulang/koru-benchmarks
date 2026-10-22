@@ -187,3 +187,17 @@ past L2 the pattern is random regardless. Rust walks the identical
 chain — the residual gap lives in the histogram/scatter passes
 around it. When a phase-split shows a chase dominating, spend the
 effort on the passes beside it, not the chain.
+
+### Falsified (dangerous variant): register-carried lanes + liveness
+
+Recipe 6 (carry loop state in tor params) applied naively to per-lane
+hash accumulators produced a *faster wrong program*: LLVM proves
+lanes that never leave the loop dead and deletes their math — 0.38s
+for a kernel doing 1/8 of the work, checksum still green because
+only lane 0 is observable. The honest shape keeps a memory
+round-trip per iteration (grid cells, like the reference's stack
+array) — LLVM's mem2reg may still legally promote it, but only after
+the stores/loads establish that all lanes are live. Pair every
+param-carry with the check: does disassembly show all the work?
+"Checksum green + faster" is not sufficient — the elided half of a
+computation is invisible to the oracle by definition.
