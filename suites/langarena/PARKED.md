@@ -232,3 +232,16 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
 34. **Certified u21 stores spill-reload** — `strh`/`ubfx`/`strb` bounce
     (~7 instrs) in cold paths; a direct 3-byte store or insert-style
     lowering would help swap-heavy code. (maze_bfs contestant)
+
+35. **`-> X` inside a `| then`/`| else` arm is an early tor return** —
+    not a produce-to-continuation. Code after the inner `if` is
+    unreachable; a tail recursion written as `|> if(...) | then ...
+    |> t(i+1)` silently drops the recursive call. Compileable and
+    checksum-plausible when the first arm alone looks right. Fix:
+    put the recursive call inside each leaf arm's produce.
+    (brainfuck_recursion contestant, 2026-10-22 — bit hard)
+
+36. **Multi-field `std/store:stored` commits in field order** —
+    `stored { a: a+d, b: f(a+d) }` reads the ALREADY-UPDATED `a` for
+    `b`. Split into two stored steps when a later field depends on
+    the un-updated value. Silent double-count bugs. (bfr contestant)
