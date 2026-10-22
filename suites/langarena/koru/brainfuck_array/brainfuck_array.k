@@ -16,6 +16,11 @@
 // - Fixed grids (cmd/jmp/stk 512, tape 30000) vs reference growable
 //   arrays; cmd capacity is sized for these programs (185/111).
 // - The dispatch while-loop is a tail-recursive tor (self_loop lowered).
+// - Dispatch is one-op-per-char like the reference — the goose-race
+//   kernel's run-folding (+- and <> collapsed to net deltas) is a
+//   known further route (~4x fewer dispatches there) but restructures
+//   the program representation beyond the reference; deliberately not
+//   taken here.
 // - Tape zeroing between runs replaces fresh allocation; warmup runs
 //   reuse whatever tape state remains (their results are discarded).
 // - res/acc i64 with explicit mod-2^32 folds (u32 wrap).
@@ -24,6 +29,7 @@
 import std/io
 import std/grid
 import std/store
+import std/switch
 
 const {
     PROG: ">++[<+++++++++++++>-]<[[>+>+<<-]>[<+>-]++++++++[>++++++++<-]>.[-]<<>++++++++++[>++++++++++[>++++++++++[>++++++++++[>++++++++++[>++++++++++[>++++++++++[-]<-]<-]<-]<-]<-]<-]<-]++++++++++."
@@ -31,6 +37,9 @@ const {
 }
 
 std/grid:new(tape, size: 30000) { c: 0[u8] }
+std/grid:slice(tape_s) { tape.c }
+std/grid:slice(cmd_s) { cmd.c }
+std/grid:slice(jmp_s) { jmp.v }
 std/grid:new(cmd, size: 512) { c: 0[u8] }
 std/grid:new(jmp, size: 512) { v: 0[i64] }
 std/grid:new(stk, size: 512) { v: 0[i64] }
@@ -42,34 +51,28 @@ iscmd = if(c == 43 or c == 45 or c == 60 or c == 62 or c == 46 or c == 91 or c =
 | then -> 1
 | else -> 0
 
-// interp — the dispatch loop as a tail-recursive tor (pc threads; st
-// holds tape pos/res; cmd/jmp grids carry the program)
-pub tor interp { pc: i64 } -> i64
+// interp — the dispatch loop as a tail-recursive tor (self_loop
+// lowered). pc/pos ride as parameters so they stay register-resident
+// (the goose-race shape); switch:char emits a native Zig switch;
+// tape/cmd/jmp are borrowed slices so every access is verbatim.
+pub tor interp { pc: i64, pos: i64 } -> i64
 interp = if(pc < st.n)
-| then |> if(cmd[pc].c == 43)
-        | then |> std/grid:stored { tape[st.pos].c: tape[st.pos].c +% 1 }
-            |> interp(pc: pc + 1): r -> r
-        | else |> if(cmd[pc].c == 45)
-            | then |> std/grid:stored { tape[st.pos].c: tape[st.pos].c -% 1 }
-                |> interp(pc: pc + 1): r -> r
-            | else |> if(cmd[pc].c == 62)
-                | then |> std/store:stored { st.pos: st.pos + 1 }
-                    |> interp(pc: pc + 1): r -> r
-                | else |> if(cmd[pc].c == 60)
-                    | then |> std/store:stored { st.pos: @max(st.pos - 1, 0) }
-                        |> interp(pc: pc + 1): r -> r
-                    | else |> if(cmd[pc].c == 91)
-                        | then |> if(tape[st.pos].c == 0)
-                            | then |> interp(pc: jmp[pc].v): r -> r
-                            | else |> interp(pc: pc + 1): r -> r
-                        | else |> if(cmd[pc].c == 93)
-                            | then |> if(tape[st.pos].c != 0)
-                                | then |> interp(pc: jmp[pc].v): r -> r
-                                | else |> interp(pc: pc + 1): r -> r
-                            | else |> if(cmd[pc].c == 46)
-                                | then |> std/store:stored { st.res: @rem(st.res * 4 + @as(i64, tape[st.pos].c), 4294967296) }
-                                    |> interp(pc: pc + 1): r -> r
-                                | else |> interp(pc: pc + 1): r -> r
+| then |> std/switch:char(cmd_s[@as(usize, @intCast(pc))])
+    | `+` _ |> std/grid:stored { tape_s[@as(usize, @intCast(pos))]: tape_s[@as(usize, @intCast(pos))] +% 1 }
+        |> interp(pc: pc + 1, pos): r -> r
+    | `-` _ |> std/grid:stored { tape_s[@as(usize, @intCast(pos))]: tape_s[@as(usize, @intCast(pos))] -% 1 }
+        |> interp(pc: pc + 1, pos): r -> r
+    | `>` _ |> interp(pc: pc + 1, pos: pos + 1): r -> r
+    | `<` _ |> interp(pc: pc + 1, pos: @max(pos - 1, 0)): r -> r
+    | `[` _ |> if(tape_s[@as(usize, @intCast(pos))] == 0)
+        | then |> interp(pc: jmp_s[@as(usize, @intCast(pc))], pos): r -> r
+        | else |> interp(pc: pc + 1, pos): r -> r
+    | `]` _ |> if(tape_s[@as(usize, @intCast(pos))] != 0)
+        | then |> interp(pc: jmp_s[@as(usize, @intCast(pc))], pos): r -> r
+        | else |> interp(pc: pc + 1, pos): r -> r
+    | `.` _ |> std/store:stored { st.res: @rem(st.res * 4 + @as(i64, tape_s[@as(usize, @intCast(pos))]), 4294967296) }
+        |> interp(pc: pc + 1, pos): r -> r
+    | no-match |> interp(pc: pc + 1, pos): r -> r
 | else -> 0
 
 // Warmup: parse WARM into cmd/jmp once, run interp 1000x. Results are
@@ -93,15 +96,13 @@ for(0..512)
                 |> std/grid:stored { jmp[i].v: stk[st.d].v }
 
 for(0..1000)
-! each _ |> std/store:stored { st.pos: 0 }
-    |> std/store:stored { st.res: 0 }
-    |> interp(pc: 0): _
+! each _ |> std/store:stored { st.res: 0 }
+    |> interp(pc: 0, pos: 0): _
 
 // Measured run: parse PROG, rebuild jumps, zero the tape, run once.
 std/store:stored { st.n: 0 }
 std/store:stored { st.d: 0 }
 std/store:stored { st.res: 0 }
-std/store:stored { st.pos: 0 }
 
 for(PROG)
 ! each ch |> std/grid:stored { cmd[st.n].c: @as(u8, @intCast(ch)) }
@@ -121,6 +122,6 @@ for(0..30000)
 ! each i |> std/grid:stored { tape[i].c: 0 }
 
 for(0..1)
-! each _ |> interp(pc: 0): _
+! each _ |> interp(pc: 0, pos: 0): _
 
 std/io:print.ln("{{ st.res:d }}")
