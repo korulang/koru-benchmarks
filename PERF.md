@@ -230,3 +230,23 @@ critical path, which on a billion-group loop is the whole
 regression. Tables buy when the branch is unpredictable or the
 ladder is long; when the input distribution collapses the branch
 predictor, arithmetic beats indexing.
+
+## Basis artifacts — measured nulls worth remembering (2026-10-22)
+
+Two "1.19x deficits" dissolved under scrutiny; the board's whole-process
+handicap (warmup+setup inside our number, excluded from Rust's Instant
+window) accounts for all of it:
+
+- **spectralnorm** — wave-4 rewrite reached identical time; disasm
+  matches Rust's loop (8-wide fmul + serial in-order fadd chain,
+  ~0.88ns/elem). Rust's 0.689s excludes 26 warmup runs; whole-process
+  Rust is 0.81s vs our 0.80s. Parity.
+- **matmul_single** — per-iteration parity: ours 7.08s/12 runs =
+  0.590s; Rust 5.949s/10 measured = 0.595s. Inner loop already emits
+  8-wide fmul.2d + register-resident fadd chain. No kernel work
+  remains; the fadd serial dependency is the floor (reassociation is
+  checksum-illegal).
+
+Rule of thumb: a ratio in the 1.1-1.2x band on an FMA/reduction-bound
+task is probably the basis, not the kernel. Check per-iteration math
+and the disasm before commissioning kernel work.
