@@ -174,3 +174,16 @@ per-run table clearing.
    green, min-of-3 improvement, no dead-code tricks.
 6. `.k` where possible; `.kz` when the emitted host shape is the point —
    say so in the kernel header.
+
+### Falsified: latency-bound pointer chases don't answer to bandwidth fixes
+
+`compress_bwt_decode`'s LF-mapping `idx = next[idx]` is a serial
+dependent-load chain over a 4-8MB table — ~4ns per link no matter what.
+u8 byte lanes, i32 `next[]` (halved footprint), borrowed slices, and
+register-carried `idx` together moved 1.41s → 1.40s. The lane-width
+and slice recipes pay on *throughput* passes (counting, scatter,
+copy); on a chase the only lever is footprint vs cache level, and
+past L2 the pattern is random regardless. Rust walks the identical
+chain — the residual gap lives in the histogram/scatter passes
+around it. When a phase-split shows a chase dominating, spend the
+effort on the passes beside it, not the chain.

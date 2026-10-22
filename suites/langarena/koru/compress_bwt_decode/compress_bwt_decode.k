@@ -23,18 +23,24 @@ import std/io
 import std/grid
 import std/store
 
-std/grid:new(pat, size: 11) { b: 0[i64] }
-std/grid:new(dat, size: 1000001) { b: 0[i64] }
+std/grid:new(pat, size: 11) { b: 0[u8] }
+std/grid:new(dat, size: 1000001) { b: 0[u8] }
 std/grid:new(cnt, size: 1000001) { v: 0[i64] }
 std/grid:new(ps, size: 1000001) { v: 0[i64] }
 std/grid:new(sa, size: 1000001) { v: 0[i64] }
 std/grid:new(tsa, size: 1000001) { v: 0[i64] }
 std/grid:new(rnk, size: 1000001) { v: 0[i64] }
 std/grid:new(nr, size: 1000001) { v: 0[i64] }
-std/grid:new(out, size: 1000001) { b: 0[i64] }
-std/grid:new(nx, size: 1000001) { v: 0[i64] }
-std/grid:new(cn2, size: 768) { v: 0[i64] }
-std/grid:new(dec, size: 1000001) { b: 0[i64] }
+std/grid:new(out, size: 1000001) { b: 0[u8] }
+std/grid:new(nx, size: 1000001) { v: 0[i32] }
+std/grid:new(cn2, size: 768) { v: 0[i32] }
+std/grid:new(dec, size: 1000001) { b: 0[u8] }
+std/grid:slice(out_s) { out.b }
+std/grid:slice(dec_s) { dec.b }
+std/grid:slice(dat_s) { dat.b }
+std/grid:slice(nx_s) { nx.v }
+std/grid:slice(cn2_s) { cn2.v }
+
 std/store:new(st) { res: 0[i64], n: 1000001[i64], oidx: 0[i64], cr: 0[i64], pc: 0[i64], t1: 0[i64], t2: 0[i64], k: 0[i64], acc: 0[i64], idx: 0[i64], dif: 0[i64] }
 
 pub tor ret0 { } -> i64
@@ -42,9 +48,14 @@ ret0 = if(0 == 0)
 | then -> 0
 | else -> 0
 
+pub tor idv { v: i64 } -> i64
+idv = if(0 == 0)
+| then -> v
+| else -> v
+
 // genl — test_data[i] = "ABRACADABRA"[i % 11]
 pub tor genl { i: i64 } -> i64
-genl = std/grid:stored { dat[i].b: pat[@rem(i, 11)].b }
+genl = std/grid:stored { dat[i].b: pat[@as(usize, @intCast(@rem(i, 11)))].b }
     |> if(i < st.n - 1)
         | then |> genl(i: i + 1): r -> r
         | else |> ret0(): r -> r
@@ -249,53 +260,52 @@ bwt = zc(i: 0): _
 // nxz: zero byte counts; reuse cnt[0..255] via zc; tc cursor in
 // cnt[256+i] — zero with the same zc loop extended to 512 entries
 pub tor zc2 { i: i64 } -> i64
-zc2 = std/grid:stored { cn2[i].v: 0 }
+zc2 = std/grid:stored { cn2_s[@as(usize, @intCast(i))]: 0 }
     |> if(i < 767)
         | then |> zc2(i: i + 1): r -> r
         | else |> ret0(): r -> r
 
 // nxc: count transformed bytes
-pub tor nxc { i: i64 } -> i64
-nxc = std/grid:stored { cn2[out[i].b].v: cn2[out[i].b].v + 1 }
-    |> if(i < st.n - 1)
-        | then |> nxc(i: i + 1): r -> r
+pub tor nxc { i: i64, nn: i64 } -> i64
+nxc = idv(v: @as(i64, out_s[@as(usize, @intCast(i))])): b
+    |> std/grid:stored { cn2_s[@as(usize, @intCast(b))]: cn2_s[@as(usize, @intCast(b))] + 1 }
+    |> if(i < nn - 1)
+        | then |> nxc(i: i + 1, nn): r -> r
         | else |> ret0(): r -> r
 
 // nxp: positions[byte] = cum; cum += cnt (cursor at cnt[256+b])
-pub tor nxp { i: i64 } -> i64
+pub tor nxp { i: i64, cum: i64 } -> i64
 nxp = if(i < 256)
-| then |> std/grid:stored { cn2[256 + i].v: st.acc }
-    |> std/store:stored { st.acc: st.acc + cn2[i].v }
-    |> nxp(i: i + 1): r -> r
+| then |> std/grid:stored { cn2_s[256 + @as(usize, @intCast(i))]: @as(i32, @intCast(cum)) }
+    |> nxp(i: i + 1, cum: cum + @as(i64, cn2_s[@as(usize, @intCast(i))])): r -> r
 | else -> 0
 
 // nxs: nx[pos[b] + tc[b]++] = i  — pos in cnt[256+b], tc cursor in
 // a third slot cnt[512+b]
-pub tor nxs { i: i64 } -> i64
-nxs = std/store:stored { st.t1: out[i].b }
-    |> std/grid:stored { nx[cn2[256 + st.t1].v + cn2[512 + st.t1].v].v: i }
-    |> std/grid:stored { cn2[512 + st.t1].v: cn2[512 + st.t1].v + 1 }
-    |> if(i < st.n - 1)
-        | then |> nxs(i: i + 1): r -> r
+pub tor nxs { i: i64, nn: i64 } -> i64
+nxs = idv(v: @as(i64, out_s[@as(usize, @intCast(i))])): b
+    |> idv(v: @as(i64, cn2_s[256 + @as(usize, @intCast(b))]) + @as(i64, cn2_s[512 + @as(usize, @intCast(b))])): p
+    |> std/grid:stored { nx_s[@as(usize, @intCast(p))]: @as(i32, @intCast(i)) }
+    |> std/grid:stored { cn2_s[512 + @as(usize, @intCast(b))]: cn2_s[512 + @as(usize, @intCast(b))] + 1 }
+    |> if(i < nn - 1)
+        | then |> nxs(i: i + 1, nn): r -> r
         | else |> ret0(): r -> r
 
 // fol — idx = nx[idx]; dec[i] = out[idx]
-pub tor fol { i: i64 } -> i64
-fol = std/store:stored { st.idx: nx[st.idx].v }
-    |> std/grid:stored { dec[i].b: out[st.idx].b }
-    |> if(i < st.n - 1)
-        | then |> fol(i: i + 1): r -> r
+pub tor fol { i: i64, idx: i64, nn: i64 } -> i64
+fol = idv(v: @as(i64, nx_s[@as(usize, @intCast(idx))])): ni
+    |> std/grid:stored { dec_s[@as(usize, @intCast(i))]: out_s[@as(usize, @intCast(ni))] }
+    |> if(i < nn - 1)
+        | then |> fol(i: i + 1, idx: ni, nn): r -> r
         | else |> ret0(): r -> r
 
 // inv — one inverse run: build next[], follow from oidx, res += n
 pub tor inv { } -> i64
 inv = zc2(i: 0): _
-    |> nxc(i: 0): _
-    |> std/store:stored { st.acc: 0 }
-    |> nxp(i: 0): _
-    |> nxs(i: 0): _
-    |> std/store:stored { st.idx: st.oidx }
-    |> fol(i: 0): _
+    |> nxc(i: 0, nn: st.n): _
+    |> nxp(i: 0, cum: 0): _
+    |> nxs(i: 0, nn: st.n): _
+    |> fol(i: 0, idx: st.oidx, nn: st.n): _
     |> std/store:stored { st.res: st.res + st.n }
     |> ret0(): _ -> 0
 
@@ -308,7 +318,7 @@ runl = inv(): _
 
 // cmpl — byte-exact compare dec vs dat; first diff sets st.dif
 pub tor cmpl { i: i64 } -> i64
-cmpl = if(dec[i].b != dat[i].b)
+cmpl = if(dec_s[@as(usize, @intCast(i))] != dat_s[@as(usize, @intCast(i))])
 | then |> std/store:stored { st.dif: 1 }
     |> ret0(): r -> r
 | else |> if(i < st.n - 1)
