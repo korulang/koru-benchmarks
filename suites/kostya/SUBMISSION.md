@@ -8,18 +8,21 @@ exact diff.
 ## What is proven (receipts)
 
 - All five `test.k` + `notify.kz` compile under a **clean checkout** of
-  koru@dc2acc0 (`zig build` → `KORU_STDLIB=... koruc -OReleaseFast
+  koru@9d5ae4e9b (`zig build` → `KORU_STDLIB=... koruc -OReleaseFast
   test.k`) — the stranger's-machine recipe works, and the
-  dc2acc0-built binaries produce byte-identical output to the
-  development-tree builds.
+  pin-built binaries produce byte-identical output to the
+  development-tree builds. The pin sits on `parse-int`'s widening to
+  `string<*>`: matmul parses argv directly
+  (`args:get | arg a |> parse-int(s: a)`), no `from-page`/`free`
+  round-trip on borrowed argv memory.
 - Running under the real `xtime.rb` (port-patched local copy,
   `xtime_local.rb`, one-line diff because minio squats :9001 on this
   laptop): announce `"Koru\t<pid>"` accepted, timed region bracketed,
-  `"stop"` accepted, `target/results.log` row written
-  (`Koru	250009000	0	0	0.0`). The notify shim is a genuine `.kz`
-  host integration — `std/net` refuses by design, no socket surface
-  exists; `std/compiler:paths` + a project-local module is the honest
-  spelling.
+  `"stop"` accepted, `target/results.log` row written for all five
+  tasks (e.g. `Koru	536898000	0	0	0.0` for matmul at n=1500). The
+  notify shim is a genuine `.kz` host integration — `std/net` refuses
+  by design, no socket surface exists; `std/compiler:paths` + a
+  project-local module is the honest spelling.
 - Output sums verified: `1431666688` (174764 x 8192 encodes) and
   `1073741824` (131072 x 8192 decodes). Fixture self-check, setup
   roundtrip verify, per-iteration probes, and a final byte-exact
@@ -31,7 +34,9 @@ exact diff.
   the primary comparison; this task's Rust/Zig/C entries use SIMD
   codecs, so base64 is the protocol proof point, not the showcase.
 - `brainfuck/test.k` + `brainfuck/notify.kz` (same shim + a `putb`
-  raw-byte tor) verified end-to-end: `xtime.rb` bracket 0.718s,
+  raw-byte tor) verified end-to-end: `xtime.rb` bracket 0.722s on the
+  scored `bench.b` (3.136s on `mandel.b`, `run2`'s input — both at the
+  pin),
   `QUIET=1` checksum `23280` identical to `bf.rs` release (1.14s),
   non-quiet output **byte-identical** to the reference, hello-world
   verify gate 42059 through the real parse+interp path. The notify
@@ -42,7 +47,7 @@ exact diff.
   and the timed result is **bit-exact** against an independent C oracle
   replicating the reference's transposed-dot math: `-287.0003333333136`
   at n=1500 vs oracle `-287.0003333333` (13 sig digits). `xtime.rb`
-  bracket 0.735s, results.log row written. Disclosed: static flat grids
+  bracket 0.537s at the pin, results.log row written. Disclosed: static flat grids
   (n≤1500, `BOUND_FAIL` past it) and i-k-j row-streamed multiply instead
   of transpose+dot — same k-ascending accumulation, bit-identical.
 - `json/test.k` verified end-to-end: both key orderings pass the verify
@@ -83,7 +88,7 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) PATH=$(KORU_ZIG):$(PATH) \
 ## Open decisions for Lars before anything goes public
 
 1. **Koru distribution.** The maintainer needs `koruc` + `koru_std` from
-   a pinned commit (verified at dc2acc0). Options: public git remote +
+   a pinned commit (verified at 9d5ae4e9b). Options: public git remote +
    `ARG KORU_COMMIT`, or a vendored tarball in the PR. Which?
 2. **Two zigs.** The suite Dockerfile installs zig **0.16.0** for
    `test.zig`; `koruc` pins **0.15.2** and shells to bare `zig` via PATH

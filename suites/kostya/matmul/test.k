@@ -88,14 +88,10 @@ calc = prep(n: @divTrunc(n, 2) * 2) |> mul(n: @divTrunc(n, 2) * 2) |> idv(v: c[@
 // a negative parse result is the usize-parse failure the reference also
 // maps to 100. Resolution lands in st.n so sibling arms reconverge.
 std/args:get(index: 1)
-| arg a |> std/string:from-page(text: a)
-    | ok s |> std/string:parse-int(s)
-        | ok nv |> std/string:free(s): _
-            |> if(nv < 0)
-                | then |> std/store:stored { st.n: 100 }
-                | else |> std/store:stored { st.n: nv }
-        | err _ |> std/string:free(s): _
-            |> std/store:stored { st.n: 100 }
+| arg a |> std/string:parse-int(s: a)
+    | ok nv |> if(nv < 0)
+        | then |> std/store:stored { st.n: 100 }
+        | else |> std/store:stored { st.n: nv }
     | err _ |> std/store:stored { st.n: 100 }
 | out-of-bounds |> std/store:stored { st.n: 100 }
 |> calc(n: 101): vchk
