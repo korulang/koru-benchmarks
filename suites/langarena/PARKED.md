@@ -245,3 +245,55 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
     `stored { a: a+d, b: f(a+d) }` reads the ALREADY-UPDATED `a` for
     `b`. Split into two stored steps when a later field depends on
     the un-updated value. Silent double-count bugs. (bfr contestant)
+
+## std/kernel — measured during the clbg_nbody port (2026-10-23)
+
+37. **`clbg_nbody` is now spelled as `std/kernel`.** shape/init/
+    `step(0..24M) { pairwise |> self }` — 138 lines vs the tuned grid
+    driver's 262, checksum `338799744` identical, ReleaseFast 0.64s vs
+    0.61s (same min-of-3 noise band). The ordering worry from wave 4
+    is FALSIFIED: pairwise emits `for i: for j in i+1..5` symmetric
+    impulse then self-advance — bit-identical to `moveFromI`, because
+    a pair (i,j) only reads positions j>i, always unadvanced. A C
+    oracle replicating both orders produced identical v2. The real
+    checksum pin was `offp` (momentum offset), which the kernel port
+    bakes into body 0's init velocity; omitting it gives 336806016.
+
+38. **`kernel:init` is single-exit.** Exactly one terminal branch —
+    `| computed` or `| reduce` — may be unguarded. Two `computed`
+    exits: KORU028. `computed` + `reduce`: refused ("cannot exit
+    through both"). Two `reduce` exits: KORU028. Consequence for
+    nbody: energy can be read before OR after the step, never both
+    — v1 ships as a verified constant. *Decision needed:* multi-exit
+    init (a second `| computed` under a name, e.g. `| computed pre`
+    and `| computed post`), or accept pinned constants.
+
+39. **A `reduce` op written before `step` in a chained `|>` list is
+    absorbed INTO the step loop** and accumulates per step: the
+    nbody probe's pre-step `self |> pairwise |> reduce` measured
+    v1 = -4057214.86 (≈0.169 × 24M). Ops in the kernel branch do not
+    sequence before/after `step` by position — reduce under step is
+    per-step accumulation by design (390_116), but the *silent*
+    capture of a pre-step-positioned reduce is a semantic trap.
+    *Decision needed:* refuse a reduce-op in a kernel branch that
+    also contains step unless nested under `| step`, or document
+    the capture rule.
+
+40. **Only the first `reduce` op's accumulators reach the `| reduce`
+    exit.** Three `kernel` branches each carrying a `reduce` op → the
+    exit's output struct held `kin1`/`pe1` only; `r.kin2` failed at
+    Zig-compile time (`no field named 'kin2'`), not at a koruc
+    diagnostic. *Decision needed:* merge all reduce ops' declared
+    accumulators into the exit struct, or refuse multiple reduce ops
+    per init loudly.
+
+41. **`for ! each` inside a `| computed |>` continuation gets no
+    effect handler** (KORU022). Tor calls do work there — the energy
+    fold lives in `eni`/`enj` tail tors instead.
+
+42. **GPU/FPGA targets don't take this kernel — by design, recorded:**
+    `self |mlir[gpu]` refuses f64 (390_104, no Float64 on the Metal/
+    SPIR-V path); `|fpga` emits SystemVerilog for integer/ranged
+    kernels but refuses under `step` (KORU122, unruled). A
+    fixed-point/integer kernel (mandelbrot-shaped) is the honest
+    showcase for those surfaces, not nbody.
