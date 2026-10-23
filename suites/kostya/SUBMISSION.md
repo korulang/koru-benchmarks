@@ -68,6 +68,23 @@ exact diff.
   Atkin + plist + digit-trie + collect, flat-arena nodes instead of
   per-node hashmaps (disclosed moat).
 
+## Linux leg (droplet receipt, 2026-10-23)
+
+Debian 13 x64 droplet (`s-2vcpu-4gb`), toolchain built the way the
+submission's Dockerfile stanza will: `curl` zig 0.15.2 + `curl` the
+github archive `koru-f5f677fa2.tar.gz`, `zig build` → koruc. All five
+drivers compiled via `KORU_STDLIB=<archive>/koru_std
+KORU_ZIG=/opt/zig/zig koruc -OReleaseFast -o target/<t>_koru test.k`
+— exactly the recipe above. Outputs re-verified on Linux: matmul
+`-287.0003333333136`, primes 9/9, base64 sums identical, brainfuck
+bench.b correct, json means match a Python oracle run against the
+droplet's own freshly-generated `/tmp/1.json` (~12 sig digits).
+The real unpatched `xtime.rb` (port 9001) accepted announce+stop for
+all five and wrote `target/results.log` rows; brackets on the shared
+2-vCPU box: base64 0.602s, brainfuck 2.206s (bench.b), json 0.311s,
+matmul 4.233s (n=1500), primes 0.121s. Times are droplet-context, not
+comparison data — the LangArena board remains the perf basis.
+
 ## Integration diff (draft, for the maintainer's tree)
 
 `base64/Makefile`:
