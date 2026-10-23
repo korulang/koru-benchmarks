@@ -147,7 +147,16 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) KORU_ZIG=$(KORU_ZIG) \
    base64, brainfuck, json, matmul, primes. The drivers reuse the
    proven kernels; per-task verify gates, notify brackets, and
    faithfulness disclosures live in each test.k header.
-5. **Disclosure text.** The submission must state plainly: static
+5. ~~**Commented sources vs the line-count metric.**~~ **Resolved —
+   generated artifact.** Lars's call: canonical sources keep the
+   per-driver disclosure headers; the submitted files are produced by
+   `scripts/strip-comments.sh SRC DST` (drops `^\s*//` lines, collapses
+   blank runs; trailing comments stay — `//` is legal inside string
+   literals). Stripped drivers rebuilt and outputs re-verified identical
+   (matmul `-287.0003333333136`, primes list, bf `23280`, json means,
+   base64 sums). The staged worktree carries the stripped form; the
+   annotated originals here remain the source of truth.
+6. **Disclosure text.** The submission must state plainly: static
    buffers vs fresh alloc (immaterial — Zig's own entry uses a
    FixedBufferAllocator), table-free base64 (select chains vs SIMD —
    the disclosed moat), per-iteration probes (the honest-liveness
