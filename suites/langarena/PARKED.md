@@ -248,48 +248,62 @@ koruc — sort_self is green now (see #11; the mergeback landed).**
 
 ## std/kernel — measured during the clbg_nbody port (2026-10-23)
 
-37. **`clbg_nbody` is now spelled as `std/kernel`.** shape/init/
-    `step(0..24M) { pairwise |> self }` — 138 lines vs the tuned grid
-    driver's 262, checksum `338799744` identical, ReleaseFast 0.64s vs
-    0.61s (same min-of-3 noise band). The ordering worry from wave 4
-    is FALSIFIED: pairwise emits `for i: for j in i+1..5` symmetric
-    impulse then self-advance — bit-identical to `moveFromI`, because
-    a pair (i,j) only reads positions j>i, always unadvanced. A C
-    oracle replicating both orders produced identical v2. The real
-    checksum pin was `offp` (momentum offset), which the kernel port
-    bakes into body 0's init velocity; omitting it gives 336806016.
+37. **`clbg_nbody` is now spelled as `std/kernel` END TO END — v1 and v2
+    both computed.** self+pairwise energy folds chained before `step`
+    (v1 = -0.1690751638, computed, not pinned), `step(0..24M)
+    { pairwise |> self }`, then self+pairwise folds chained after
+    (v2 = -0.1690366593, computed). One `| reduce r |>` exit carries
+    all four accumulators. Checksum `338799744` identical, ~0.64s vs
+    the tuned grid driver's ~0.62 (this box's noise band). The
+    ordering worry from wave 4 is FALSIFIED: pairwise emits
+    `for i: for j in i+1..5` symmetric impulse then self-advance —
+    bit-identical to `moveFromI`, because a pair (i,j) only reads
+    positions j>i, always unadvanced. A C oracle replicating both
+    orders produced identical v2. The real checksum pin was `offp`
+    (momentum offset), baked into body 0's init velocity; omitting
+    it gives 336806016. Accumulator-order note: the folds live in
+    strict-mode `self`/`pairwise` bodies writing bare accumulator
+    names (`kin1 +=`, `pot1 -=`) that resolve to the `var` slots the
+    `reduce` ops declare — a reduce op's OWN loop runs
+    `@setFloatMode(.optimized)`, which would gamble the 7-decimal
+    format via reassociation, so the reduces only declare the exit
+    fields.
 
 38. **`kernel:init` is single-exit.** Exactly one terminal branch —
     `| computed` or `| reduce` — may be unguarded. Two `computed`
     exits: KORU028. `computed` + `reduce`: refused ("cannot exit
-    through both"). Two `reduce` exits: KORU028. Consequence for
-    nbody: energy can be read before OR after the step, never both
-    — v1 ships as a verified constant. *Decision needed:* multi-exit
-    init (a second `| computed` under a name, e.g. `| computed pre`
-    and `| computed post`), or accept pinned constants.
+    through both"). Two `reduce` exits: KORU028. Partially dissolved
+    by #39's fix: pre+post SCALAR reads don't need two exits — one
+    `| reduce r |>` merges every reduce op's accumulators. Still open
+    for ARRAY reads (a `computed` snapshot before AND after step
+    remains impossible). *Decision needed:* multi-exit init, or
+    accept that reduce-scalars cover the measured need.
 
-39. **A `reduce` op written before `step` in a chained `|>` list is
-    absorbed INTO the step loop** and accumulates per step: the
-    nbody probe's pre-step `self |> pairwise |> reduce` measured
-    v1 = -4057214.86 (≈0.169 × 24M). Ops in the kernel branch do not
-    sequence before/after `step` by position — reduce under step is
-    per-step accumulation by design (390_116), but the *silent*
-    capture of a pre-step-positioned reduce is a semantic trap.
-    *Decision needed:* refuse a reduce-op in a kernel branch that
-    also contains step unless nested under `| step`, or document
-    the capture rule.
+39. ~~A `reduce` op written before `step` is absorbed INTO the step
+    loop~~ — **FIXED in koru `b92b91a4c`** (2026-10-23). The trap
+    measured v1 = -4057214.86; the fix makes op POSITION in the `|>`
+    chain the schedule: before `step` = once over the pre-step
+    state, under `| step |>` = per step (390_116's pinned contract),
+    past `step` = once over the post-step state. `KernelOp` carries
+    `position: pre|step|post`; emission groups accordingly. Pins:
+    390_131_reduce_before_step, 390_132_reduce_after_step. This
+    file's v1/v2 folds are the first honest consumer.
 
-40. **Only the first `reduce` op's accumulators reach the `| reduce`
-    exit.** Three `kernel` branches each carrying a `reduce` op → the
-    exit's output struct held `kin1`/`pe1` only; `r.kin2` failed at
-    Zig-compile time (`no field named 'kin2'`), not at a koruc
-    diagnostic. *Decision needed:* merge all reduce ops' declared
-    accumulators into the exit struct, or refuse multiple reduce ops
-    per init loudly.
+40. ~~Only the first `reduce` op's accumulators reach the `| reduce`
+    exit~~ — **dissolved by #39's fix.** Three reduce ops (declare-
+    only + two pre/post) all reach `r`: verified `r.kin1`, `r.pot1`,
+    `r.kin2`, `r.pot2` in this file. The earlier `no field named
+    'kin2'` Zig-compile failure was downstream of the same
+    flattening — the second reduce op was being collected/emitted
+    in the wrong position. Declare-only reduces (`name[type]` with
+    no statements) emit no element loop — added to the same commit
+    for exactly this use.
 
 41. **`for ! each` inside a `| computed |>` continuation gets no
-    effect handler** (KORU022). Tor calls do work there — the energy
-    fold lives in `eni`/`enj` tail tors instead.
+    effect handler** (KORU022). Moot for nbody since #39's fix —
+    the energy folds moved into kernel ops and the `computed` exit
+    is gone entirely; still open for other users of `computed`
+    continuations.
 
 42. **GPU/FPGA targets don't take this kernel — by design, recorded:**
     `self |mlir[gpu]` refuses f64 (390_104, no Float64 on the Metal/

@@ -4,45 +4,51 @@
 // ACCUMULATES across runs; checksum = (csf(v1) << 5) & csf(v2),
 // u32 arithmetic — oracle 338799744).
 //
-// SPELLED AS std/kernel: shape/init/step(pairwise+self). The kernel's
-// emitted loop is `for i: for j in i+1..5` symmetric-impulse then a
-// self advance — bit-identical to moveFromI's interleaved order,
-// because a pair (i,j) only ever reads positions j>i, which are always
-// unadvanced. Proven, not assumed: a C oracle replicating both orders
-// produced the same v2 (-0.1690366593) and checksum (338799744); the
-// earlier "accumulation-order is checksum-pinned" note applied to PASS
-// order (reversing the five per-body sweeps flips it), which pairwise's
-// i-asc/j-asc traversal already matches.
+// SPELLED AS std/kernel end to end: shape/init, self+pairwise energy
+// folds chained BEFORE step (v1 = -0.1690751638 computed, not pinned),
+// step(pairwise+self) for the 24M integration steps, then self+pairwise
+// folds chained AFTER step (v2 = -0.1690366593 computed). One
+// `| reduce r |>` exit carries all four accumulators — kernel op
+// position in the `|>` chain is the schedule: before step = once over
+// the initial state, under `| step |>` = per step, past step = once over
+// the final state (landed in koru b92b91a4c after a measured bug: a
+// reduce chained before step used to be absorbed INTO the step loop and
+// accumulated per step — v1 = -4057214.86, a real wrong result).
+//
+// Accumulator writes inside self/pairwise bodies (`kin1 +=`, `pot1 -=`)
+// are NOT `k.` paths — they pass the transform through verbatim and
+// resolve to the `var` slots the following `reduce` op declares at the
+// top of the handler. That gives exact oracle accumulation: elementwise
+// terms fold i-ascending into one scalar, pair terms fold
+// i-asc/j-ascending — same traversal, same strict float mode as the
+// reference's eni/enj loops. (A reduce op's own loop runs
+// @setFloatMode(.optimized) — reassociation would gamble the 7-decimal
+// format, so these folds deliberately live in strict self/pairwise ops
+// and the reduces only declare the exit fields.)
 //
 // Initial state carries the momentum offset BAKED into body 0's
 // velocity (reference runs offsetMomentum before v1: sun takes
 // -Σ(mᵢvᵢ)/m_sun = -0.00038766340719874267, -0.0032753590371765707,
 // 2.3935734080003e-05 — same class as the reference's v*365.24
 // pre-bakes, one compile-time evaluation instead of a runtime pass).
-// v1 is the energy of that fixed state: -0.1690751638, a constant of
-// the problem — verified against the C oracle and csf's format path.
-// The kernel init cannot read the array before AND after the step
-// (single `computed` exit — KORU028), so v1 is a pinned literal, not a
-// computed value; disclosed, not hidden.
-//
-// v2 is computed over the `computed` binding by the same eni/enj pair
-// loops the reference uses — inside the same program, after the step.
+// The kernel's pairwise emits `for i: for j in i+1..5` symmetric-impulse
+// then self advance — bit-identical to moveFromI's interleaved order,
+// because a pair (i,j) only ever reads positions j>i, which are always
+// unadvanced. Proven, not assumed: a C oracle replicating both orders
+// produced the same v2 and checksum (338799744).
 //
 // mag = dt/(dsq·√dsq) — mathematically identical to the reference's
 // dt/(d·d·d) with d=√dsq, ~1-2ulp different rounding, inside the
-// oracle's 1e-7 format slack (receipt: checksum 338799744 above).
-// Impulse products are spelled dx*(m*mag) — mass·mag grouped first —
-// matching the reference's product order; (dx*m)*mag is a ~1ulp
-// different rounding that measurably drifts the 7-decimal format over
-// 24M steps (falsified during the kernel probe).
+// oracle's 1e-7 format slack. Impulse products are spelled dx*(m*mag) —
+// mass·mag grouped first — matching the reference's product order;
+// (dx*m)*mag measurably drifts the 7-decimal format over 24M steps
+// (falsified during the kernel probe).
 //
 // FALSIFIED during this kernel port:
 // - missing momentum offset flips v1's format → checksum 336806016.
-// - `reduce` placed BEFORE `step` in a chained op list is absorbed
-//   INTO the step loop and accumulates per step (v1 = -4057214.86 —
-//   measured). Pre/post-step reads want two `computed` exits, which
-//   KORU028 refuses; `computed`+`reduce` coexistence is also refused.
-//   Recorded as a kernel-vocabulary gap in PARKED.md.
+// - `reduce` before `step` absorbed into the step loop → v1=-4057214.86.
+//   FIXED upstream (koru b92b91a4c): position in the chain is now the
+//   schedule; this file is the honest consumer of that fix.
 
 import std/kernel
 import std/io
@@ -50,7 +56,6 @@ import std/fmt
 import std/store
 
 std/store:new(st) { t3: 0[i64] }
-std/store:new(fs) { e2: 0.0[f64] }
 
 pub tor ret0 { } -> i64
 ret0 = if(0 == 0)
@@ -77,26 +82,6 @@ std/kernel:shape(Body) {
     mass: f64,
 }
 
-// enj — inner pair loop of energy for body i, over the computed array
-pub tor enj { c: []Body, i: i64, j: i64 } -> i64
-enj = if(j < 5)
-| then |> std/store:stored { fs.e2: fs.e2 - c[@as(usize, @intCast(i))].mass * c[@as(usize, @intCast(j))].mass / @sqrt((c[@as(usize, @intCast(i))].x - c[@as(usize, @intCast(j))].x) * (c[@as(usize, @intCast(i))].x - c[@as(usize, @intCast(j))].x) + (c[@as(usize, @intCast(i))].y - c[@as(usize, @intCast(j))].y) * (c[@as(usize, @intCast(i))].y - c[@as(usize, @intCast(j))].y) + (c[@as(usize, @intCast(i))].z - c[@as(usize, @intCast(j))].z) * (c[@as(usize, @intCast(i))].z - c[@as(usize, @intCast(j))].z)) }
-    |> enj(c, i, j: j + 1): r -> r
-| else -> 0
-
-// eni — outer energy loop
-pub tor eni { c: []Body, i: i64 } -> i64
-eni = if(i < 5)
-| then |> std/store:stored { fs.e2: fs.e2 + 0.5 * c[@as(usize, @intCast(i))].mass * (c[@as(usize, @intCast(i))].vx * c[@as(usize, @intCast(i))].vx + c[@as(usize, @intCast(i))].vy * c[@as(usize, @intCast(i))].vy + c[@as(usize, @intCast(i))].vz * c[@as(usize, @intCast(i))].vz) }
-    |> enj(c, i, j: i + 1): _
-    |> eni(c, i: i + 1): r -> r
-| else -> 0
-
-pub tor energy { c: []Body } -> f64
-energy = std/store:stored { fs.e2: 0.0 }
-    |> eni(c, i: 0): _
-    |> ret0(): _ -> fs.e2
-
 std/kernel:init(Body) {
     { x: 0.0, y: 0.0, z: 0.0,
       vx: -0.00038766340719874267, vy: -0.0032753590371765707, vz: 2.3935734080003e-05,
@@ -114,7 +99,27 @@ std/kernel:init(Body) {
       vx: 0.979090732243898, vy: 0.5946989986476762, vz: -0.034755955504078104,
       mass: 0.0020336868699246304 },
 }
-| kernel k |> std/kernel:step(0..24000000)
+| kernel k |> std/kernel:self {
+        kin1 += 0.5 * k.mass * (k.vx*k.vx + k.vy*k.vy + k.vz*k.vz)
+    }
+    |> std/kernel:pairwise {
+        pot1 -= k.mass * k.other.mass / @sqrt((k.x-k.other.x)*(k.x-k.other.x) + (k.y-k.other.y)*(k.y-k.other.y) + (k.z-k.other.z)*(k.z-k.other.z))
+    }
+    |> std/kernel:reduce {
+        kin1[f64]
+        pot1[f64]
+    }
+    |> std/kernel:step(0..24000000)
+    |> std/kernel:self {
+        kin2 += 0.5 * k.mass * (k.vx*k.vx + k.vy*k.vy + k.vz*k.vz)
+    }
+    |> std/kernel:pairwise {
+        pot2 -= k.mass * k.other.mass / @sqrt((k.x-k.other.x)*(k.x-k.other.x) + (k.y-k.other.y)*(k.y-k.other.y) + (k.z-k.other.z)*(k.z-k.other.z))
+    }
+    |> std/kernel:reduce {
+        kin2[f64]
+        pot2[f64]
+    }
     | step |> std/kernel:pairwise {
             const dx = k.x - k.other.x;
             const dy = k.y - k.other.y;
@@ -132,7 +137,6 @@ std/kernel:init(Body) {
                 k.y += 0.01 * k.vy;
                 k.z += 0.01 * k.vz;
             }
-| computed c |> energy(c): v2
-    |> csfv(v: -0.1690751638): h1
-    |> csfv(v: v2): h2
+| reduce r |> csfv(v: r.kin1 + r.pot1): h1
+    |> csfv(v: r.kin2 + r.pot2): h2
     |> std/io:print.ln("{{ @rem((h1 << 5) & h2, 4294967296):d }}")
