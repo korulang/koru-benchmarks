@@ -1,9 +1,12 @@
 # Kostya benchmarks — Koru submission staging
 
-Status: **local proof complete, nothing public.** The full protocol chain is
-verified end-to-end on this machine against the real `xtime.rb` for all
-five tasks; the remaining legs are Linux CI + Lars's approval of the
-exact diff.
+Status: **SUBMITTED — PR [#521](https://github.com/kostya/benchmarks/pull/521)
+open against kostya/benchmarks** from `korulang/benchmarks` @
+`koru-submission` (0f2569c), 2026-10-23. Lars approved the exact diff and
+the PR body; the suite merges in maintenance sweeps, so the official
+table lands on the maintainer's clock. The full protocol chain below was
+verified end-to-end before submission, on this machine and a Debian
+droplet (since destroyed).
 
 ## What is proven (receipts)
 
