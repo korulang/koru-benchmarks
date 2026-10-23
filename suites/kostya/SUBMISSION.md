@@ -8,13 +8,13 @@ exact diff.
 ## What is proven (receipts)
 
 - All five `test.k` + `notify.kz` compile under a **clean checkout** of
-  koru@9d5ae4e9b (`zig build` → `KORU_STDLIB=... koruc -OReleaseFast
-  test.k`) — the stranger's-machine recipe works, and the
-  pin-built binaries produce byte-identical output to the
-  development-tree builds. The pin sits on `parse-int`'s widening to
-  `string<*>`: matmul parses argv directly
-  (`args:get | arg a |> parse-int(s: a)`), no `from-page`/`free`
-  round-trip on borrowed argv memory.
+  koru@f5f677fa2 (`zig build` → `KORU_STDLIB=... koruc -OReleaseFast
+  -o <name> test.k`) — the stranger's-machine recipe works, and the
+  pin-built binaries produce verified output (matmul
+  `-287.0003333333136`, primes oracle list, json means — all rerun at
+  the pin). The pin sits on the day's toolchain work: `parse-int`
+  widened to `string<*>` (argv parses directly, no `from-page`/`free`),
+  `-o` pinned at `220_056`, `KORU_ZIG` override pinned at `220_057`.
 - Running under the real `xtime.rb` (port-patched local copy,
   `xtime_local.rb`, one-line diff because minio squats :9001 on this
   laptop): announce `"Koru\t<pid>"` accepted, timed region bracketed,
@@ -81,21 +81,26 @@ target/base64_koru: test.k notify.kz | target
 
 `common/commands.mk`:
 ```make
-KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) PATH=$(KORU_ZIG):$(PATH) \
+KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) KORU_ZIG=$(KORU_ZIG) \
 	koruc -OReleaseFast -o $@ $<
 ```
 
 ## Open decisions for Lars before anything goes public
 
 1. **Koru distribution.** The maintainer needs `koruc` + `koru_std` from
-   a pinned commit (verified at 9d5ae4e9b). Options: public git remote +
+   a pinned commit (verified at f5f677fa2). Options: public git remote +
    `ARG KORU_COMMIT`, or a vendored tarball in the PR. Which?
-2. **Two zigs.** The suite Dockerfile installs zig **0.16.0** for
-   `test.zig`; `koruc` pins **0.15.2** and shells to bare `zig` via PATH
-   (no `KORU_ZIG` env var exists — `bo_argv[0] = "zig"` in
-   `compiler.materialize-build.kz`). Options: a `koru` wrapper script
-   that prepends zig-0.15.2 to PATH (zero toolchain change), or add a
-   `KORU_ZIG` env override to koruc (cleaner, a toolchain change).
+2. ~~**Two zigs.**~~ **Resolved — `KORU_ZIG` env override landed
+   upstream** (koru@f5f677fa2). The suite Dockerfile installs zig
+   **0.16.0** for `test.zig`; koruc pins **0.15.2** — now named
+   explicitly: `KORU_ZIG=/path/to/zig-0.15.2 koruc ...`. One resolver
+   (`emitter_helpers.zigExe()`) covers all nine spawn sites in both
+   processes — koruc's backend build and the backend's `build`/
+   `build-exe`/`env`/`fetch` — which the zig-lib overlay's version gate
+   needs to be true. Verified: wrapper script logs show all three
+   pipeline spawns honoring it; wrong path fails loud
+   (`error.FileNotFound`), never silently falls back. Regression pin
+   `220_057`. The Makefile recipe below uses it.
 3. ~~**koruc output path.**~~ **Resolved — `-o` already exists.**
    `koruc -OReleaseFast -o target/base64_koru test.k` lands the binary
    at the name given (verified: `-o` parsed at `src/main.zig:7538`,
