@@ -1,0 +1,22 @@
+[
+  {
+    "languageId": "rs",
+    "confidence": 0.09054781496524811
+  },
+  {
+    "languageId": "css",
+    "confidence": 0.038387518376111984
+  },
+  {
+    "languageId": "js",
+    "confidence": 0.03530074283480644
+  },
+  {
+    "languageId": "ts",
+    "confidence": 0.03384222835302353
+  },
+  {
+    "languageId": "ml",
+    "confidence": 0.03314188867807388
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "languageId": "py",
+    "confidence": 0.0551331453025341
+  },
+  {
+    "languageId": "clj",
+    "confidence": 0.043098848313093185
+  },
+  {
+    "languageId": "lisp",
+    "confidence": 0.03607303649187088
+  },
+  {
+    "languageId": "rb",
+    "confidence": 0.03553809970617294
+  },
+  {
+    "languageId": "r",
+    "confidence": 0.03508102521300316
+  }
+]
