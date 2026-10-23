@@ -14,11 +14,13 @@ Faithful port: same naive algorithm, same parameters as the reference — no
 memoization, no SIMD, no algorithmic shortcut. `expected.txt` in each `koru/<name>/`
 is the reference oracle, unchanged.
 
-## Board (provisional — only run-verified rows are marked SHOWN)
+## Board
 
-Only kernels with a `koru/<name>/` port have been built through `koruc`. The rest
-are a *projected* classification of what each kernel will need — a work list, not
-a result. Run `../../run.sh` for the real, current board.
+All 22 kernels have `koru/<name>/` ports and are oracle-green through
+`../../run.sh`; `../../bench.sh` times every present toolchain column
+(hyperfine -N, warmup 3, min-runs 10) and persists to `results/latest.json`.
+The sections below keep the per-kernel notes; the projections are history —
+every kernel is now measured.
 
 **Run-verified**
 
@@ -26,27 +28,50 @@ a result. Run `../../run.sh` for the real, current board.
   Surfaced the `usize`/`i64` loop-variable bridge (fixed in-port via `@as(i64,
   @intCast(i))`; the raw-Zig-error leak is floated as a core-pin candidate).
 
-**Projected: single-accumulator / linear-recursion folds** (the `capture { acc }
-! as a |> for(a..b) ! each i |> captured { acc: … }` idiom — expected portable)
+**Single-accumulator / linear-recursion folds** (the `capture { acc }
+! as a |> for(a..b) ! each i |> captured { acc: … }` idiom)
 
 - `factorial`, `digitsum`, `gcdsum`, `collatz`, `mutual`, `isqrt`, `powmod`,
   `primes`, `coprime`, `nestedloop`
 
-**Projected: non-tail tree recursion** (combine *two* recursive results, e.g.
-`fib(n-1)+fib(n-2)`) — not a tail self-continuation, so it does not flatten to a
-loop; the interesting frontier for how Koru expresses/runs non-tail recursion
+**Non-tail tree recursion** (combine *two* recursive results, e.g.
+`fib(n-1)+fib(n-2)` — chained binds with the final `-> a + b` reading both)
 
 - `fib`, `hanoi`, `ackermann`, `tak`, `pascal`, `coins`
 
-**Projected: blocked on an absent language feature** (each names a real gap)
+**Formerly "blocked on an absent language feature" — now all GREEN via the
+flat-arena pattern** (proven by LangArena's `binarytrees_arena`): recursive
+union types become `std/grid` rows with preorder-arithmetic child indexes;
+the traversal chases the stored indexes so the tree materializes honestly.
+The disclosure is that allocation pressure (the kernel's nominal axis) is
+not measured — the arena is allocated once and overwritten per iteration.
 
-- `binarytrees`, `exprtree` — recursive **algebraic/union types** with record
-  variants + destructuring `match` (absent in pure Koru today)
-- `textstats` — **RED (SHOWN)** `1574956`. Static text scan (string length /
-  `contains` / `startsWith`). Migrated `event`→`tor` and `[]const u8`→`string`,
-  but the seed-into-outer-capture refeed still trips the current punging rule
-  (KORU164 "captured: punning is mandatory") — a live idiom gap, not the
-  originally-projected missing string builtins.
+- `binarytrees` — **GREEN (SHOWN)** `19659600`. `{left,right}` arena,
+  16383 rows per depth-13 tree, recursive `check` pointer-chase.
+- `exprtree` — **GREEN (SHOWN)** `900720437`. `{tag,a,b}` arena, 32767 rows,
+  Lit/Add/Mul tags; recursive `eval` chase.
+- `listops` — **GREEN (SHOWN)** `15992435`. Flat `xs[4000]` grid, matching
+  the suite's own Rust/C ports (which likewise flatten the persistent list).
+- `textstats` — **GREEN (SHOWN)** `1574956`. Static text scan; the earlier
+  KORU164 punning refusal was worked around in-port.
+
+**Osprey column pin:** `bench.sh` builds `.osp` sources with the sibling
+checkout's `target/release/osprey`, currently at `54f385a` — the commit the
+vendored suite was written for. Upstream `main` (post-v0.21.x) refuses every
+vendored `.osp` here: arithmetic is now an effect that must be `handle`d, and
+the case sources predate the requirement (`unhandled effect operations at
+program entry: Arith.overflow`). Worth reporting upstream: their own
+benchmark suite doesn't compile on latest main.
+
+**Toolchain findings surfaced by these ports** (recorded for the compiler
+side, not filed yet):
+
+- A `|>` continuation on its own line at *equal* indentation to `! each`
+  parses as a sibling step **after** the loop — the ops silently execute
+  once outside the `each` body. No diagnostic; wrong-but-valid emission.
+- A tor invocation missing an argument emits `.{ .idx = _ }` at Zig level
+  instead of a Koru diagnostic — bare `_` then fails the Zig compile with
+  a raw Zig error, leaking the generated-code layer.
 
 **Run-verified beyond the fold** (where "run-verified" means the kernel compiles
 through current `koruc` and matches its oracle):
