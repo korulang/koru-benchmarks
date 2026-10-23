@@ -1,0 +1,16 @@
+# Koru vs Goose — same commits both platforms, verify-first, whole-process
+# interleaved min-of-5. koruc f5f677fa2, goose f605b5a (aardappel/goose).
+# Linux: Debian 13 x86_64 2-vCPU shared droplet; koru via archive+KORU_ZIG
+# (zig 0.15.2), goose via cmake Release. RSS via GNU time -v (KB->MB).
+# macOS: arm64, RSS+instructions via time -l.
+#
+# test          mac koru   mac goose   ratio    linux koru  linux goose  ratio
+matmul          0.5167s    0.5239s     0.98     3.8429s     3.7849s      1.015
+primes          0.0318s    0.0381s     0.83     0.1233s     0.1506s      0.818
+brainfuck       0.6393s    1.1600s     0.55     1.5311s     3.3871s      0.452
+base64          0.2510s    0.2565s     0.97     0.5850s     0.6473s      0.903
+json            0.1206s    0.1242s     0.97     0.3243s     0.3397s      0.954
+#
+# geomean koru/goose: macOS 0.84, Linux 0.80. Koru at-or-ahead on 4/5 both
+# platforms; matmul a tie within noise. Ratios transfer within ~20% per row
+# across architectures — the macOS board was not arm64-specific.
