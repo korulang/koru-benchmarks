@@ -25,7 +25,7 @@ bucket-of -> @rem(h, 8)
 
 pub tor seed-of { line: string } -> i64
 seed-of = std/string:from-page(text: line)
-| ok s |> std/string:parse-int(s)
+| ok s |> std/string:parse-int(s: s.data)
     | ok v |> std/string:free(s) |> if(v == 0)
         | then -> 1
         | else -> v
