@@ -87,9 +87,21 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) KORU_ZIG=$(KORU_ZIG) \
 
 ## Open decisions for Lars before anything goes public
 
-1. **Koru distribution.** The maintainer needs `koruc` + `koru_std` from
-   a pinned commit (verified at f5f677fa2). Options: public git remote +
-   `ARG KORU_COMMIT`, or a vendored tarball in the PR. Which?
+1. ~~**Koru distribution.**~~ **Resolved — `ARG` + GitHub source
+   archive, matching the suite's own idiom.** Every toolchain in the
+   suite's `docker/Dockerfile` arrives as `ARG <VER>` +
+   `curl <upstream URL> | tar -x` (zig itself included); nothing is
+   vendored into the PR and no published image is consumed. Koru's row:
+   ```dockerfile
+   ARG KORU=f5f677fa2
+   RUN curl -L https://github.com/korulang/koru/archive/$KORU.tar.gz \
+       | tar -xz && cd koru-* && zig build
+   ARG ZIG_KORU=zig-x86_64-linux-0.15.2
+   RUN curl -L https://ziglang.org/download/0.15.2/$ZIG_KORU.tar.xz | tar -xJ
+   ENV KORU_ZIG="/root/bin/$ZIG_KORU/zig"
+   ```
+   Archive URL verified anonymously (`200` on codeload). Prereq already
+   done: koru main pushed through f5f677fa2.
 2. ~~**Two zigs.**~~ **Resolved — `KORU_ZIG` env override landed
    upstream** (koru@f5f677fa2). The suite Dockerfile installs zig
    **0.16.0** for `test.zig`; koruc pins **0.15.2** — now named
