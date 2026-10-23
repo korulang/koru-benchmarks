@@ -1,14 +1,17 @@
 # Kostya benchmarks — Koru submission staging
 
 Status: **local proof complete, nothing public.** The full protocol chain is
-verified end-to-end on this machine against the real `xtime.rb`; the
-remaining legs are Linux CI + Lars's approval of the exact diff.
+verified end-to-end on this machine against the real `xtime.rb` for all
+five tasks; the remaining legs are Linux CI + Lars's approval of the
+exact diff.
 
 ## What is proven (receipts)
 
-- `base64/test.k` + `base64/notify.kz` compile under a **clean clone** of
-  koru@dc2acc0 (`git clone` → `zig build` → `KORU_STDLIB=... koruc
-  -OReleaseFast test.k`) — the stranger's-machine recipe works.
+- All five `test.k` + `notify.kz` compile under a **clean checkout** of
+  koru@dc2acc0 (`zig build` → `KORU_STDLIB=... koruc -OReleaseFast
+  test.k`) — the stranger's-machine recipe works, and the
+  dc2acc0-built binaries produce byte-identical output to the
+  development-tree builds.
 - Running under the real `xtime.rb` (port-patched local copy,
   `xtime_local.rb`, one-line diff because minio squats :9001 on this
   laptop): announce `"Koru\t<pid>"` accepted, timed region bracketed,
@@ -33,6 +36,32 @@ remaining legs are Linux CI + Lars's approval of the exact diff.
   non-quiet output **byte-identical** to the reference, hello-world
   verify gate 42059 through the real parse+interp path. The notify
   shim is unchanged — `putb` is one more proc on the same module.
+- `matmul/test.k` verified end-to-end: argv parsing matches the
+  reference (`argv[1]` → n, missing/unparseable/negative → 100), the
+  `calc(101)` self-check gates the announce (−18.6716666 vs −18.67±0.1),
+  and the timed result is **bit-exact** against an independent C oracle
+  replicating the reference's transposed-dot math: `-287.0003333333136`
+  at n=1500 vs oracle `-287.0003333333` (13 sig digits). `xtime.rb`
+  bracket 0.735s, results.log row written. Disclosed: static flat grids
+  (n≤1500, `BOUND_FAIL` past it) and i-k-j row-streamed multiply instead
+  of transpose+dot — same k-ascending accumulation, bit-identical.
+- `json/test.k` verified end-to-end: both key orderings pass the verify
+  gate through the real parse path, `/tmp/1.json` is read **outside**
+  the timed bracket exactly like the reference, and the means match a
+  Python oracle to ~12 significant digits (`x -4.995830918389563e-30`
+  vs `-4.995830918389581e-30`, `y/z` same class — summation-order float
+  error, expected). `xtime.rb` bracket 0.105s — parse+accumulate only.
+  Disclosed: schema-directed `std/json:parse` into `[]{x,y,z}` records
+  (the typed-reader contract; unknown fields passed over).
+- `primes/test.k` verified end-to-end: `find(100,2)` sorted yields
+  exactly `[2,23,29]` through the real sieve+trie+walk path, and the
+  scored output is **identical** to an independent Eratosthenes oracle —
+  the full set of primes ≤ 5,000,000 starting `32338`:
+  `[323381, 323383, 3233803, 3233809, 3233851, 3233863, 3233873,
+  3233887, 3233897]`, sorted. The sort sits inside the timed bracket
+  (the reference sorts inside `find`). `xtime.rb` bracket 0.030s —
+  Atkin + plist + digit-trie + collect, flat-arena nodes instead of
+  per-node hashmaps (disclosed moat).
 
 ## Integration diff (draft, for the maintainer's tree)
 
@@ -66,22 +95,30 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) PATH=$(KORU_ZIG):$(PATH) \
    CWD; the Makefile wants `target/base64_koru`. Either `koruc -o`
    learns to name the executable, or the recipe moves `a.out` after
    build and cleans the emitted `*.zig`/`zig-out` litter. Cosmetic.
-4. **Task coverage.** base64 + brainfuck staged and proven. Other
-   tasks (json, matmul, primes) want their own `test.k` drivers —
-   the LangArena kernels carry the algorithms; the drivers are
-   per-suite-shape work, not new kernel work.
+4. **Task coverage.** All five tasks staged and proven end-to-end:
+   base64, brainfuck, json, matmul, primes. The drivers reuse the
+   proven kernels; per-task verify gates, notify brackets, and
+   faithfulness disclosures live in each test.k header.
 5. **Disclosure text.** The submission must state plainly: static
    buffers vs fresh alloc (immaterial — Zig's own entry uses a
    FixedBufferAllocator), table-free base64 (select chains vs SIMD —
    the disclosed moat), per-iteration probes (the honest-liveness
-   mechanism — costs one read per iteration, negligible at this size).
+   mechanism — costs one read per iteration, negligible at this size),
+   matmul i-k-j vs transpose+dot (bit-identical accumulation),
+   primes flat-arena trie vs per-node hashmaps, and fixed grid bounds
+   (`BOUND_FAIL` on n>1500).
 
 ## Local re-verification recipe
 
 ```sh
-# in koru-benchmarks/suites/kostya/base64/
-cp test.k /tmp/t.k && sed -i '' 's/port: 9001/port: 19001/' /tmp/t.k
-koruc -OReleaseFast /tmp/t.k          # needs KORU_STDLIB
-ruby xtime_local.rb ./a.out           # listens on :19001
+# per task dir (base64, brainfuck, json, matmul, primes) —
+# the patched copy must live beside notify.kz (paths are source-relative)
+d=suites/kostya/matmul; mkdir -p /tmp/kverify
+sed 's/port: 9001/port: 19001/' $d/test.k > /tmp/kverify/test.k
+cp $d/notify.kz /tmp/kverify/ && cd /tmp/kverify
+KORU_STDLIB=<koru>/koru_std koruc -OReleaseFast test.k
+ruby <koru-benchmarks>/$d/xtime_local.rb ./a.out   # listens on :19001
 cat target/results.log
+# task args: matmul takes MSIZE (e.g. ./a.out 1500); brainfuck takes the
+# program file; json reads /tmp/1.json (json/generate_json.rb makes it)
 ```

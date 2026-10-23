@@ -1,0 +1,1 @@
+{"lang":"zig","library":false,"flags":["release=fast","build=macos"],"entry_file":"/Users/larsde/src/koru-benchmarks/suites/kostya/json/test.k","entry_dir":"/Users/larsde/src/koru-benchmarks/suites/kostya/json","project_root":"/Users/larsde/src/koru-benchmarks/suites/kostya/json","koru_home":"/Users/larsde/src/koru","env":{}}
