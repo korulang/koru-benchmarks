@@ -21,7 +21,7 @@
 
 const std = @import("std");
 
-~[comptime|transform] pub tor gemv.* {
+~[comptime|transform] pub tor gemv.kernel[*] {
     event_name: string,
     invocation: *const Invocation,
     item: *const std/compiler:Item,
@@ -30,11 +30,11 @@ const std = @import("std");
     allocator: std.mem.Allocator,
 } -> SiteResult
 
-~proc gemv.*|zig {
+~proc gemv.kernel[*]|zig {
     const ast = @import("ast");
 
     const flow = if (item.* == .flow) &item.flow else {
-        return ast.refuse(allocator, reporter, .KORU161, item.event_decl.location, "gemv", "gemv.*: transform fired on a non-flow item", .{});
+        return ast.refuse(allocator, reporter, .KORU161, item.event_decl.location, "gemv", "gemv.kernel[*]: transform fired on a non-flow item", .{});
     };
     const loc = flow.location;
     const module = flow.module;
@@ -47,10 +47,10 @@ const std = @import("std");
 
     // event_name: "gemv.kernel[T:f16;I:1002;J:512]"
     const lb = std.mem.indexOfScalar(u8, event_name, '[') orelse {
-        return fail(allocator, reporter, loc, module, "gemv.*: expected bracket params — gemv.kernel[T:f16;I:1002;J:512](name: \"k\")", .{});
+        return fail(allocator, reporter, loc, module, "gemv.kernel[*]: expected bracket params — gemv.kernel[T:f16;I:1002;J:512](name: \"k\")", .{});
     };
     const rb = std.mem.lastIndexOfScalar(u8, event_name, ']') orelse {
-        return fail(allocator, reporter, loc, module, "gemv.*: unclosed bracket params", .{});
+        return fail(allocator, reporter, loc, module, "gemv.kernel[*]: unclosed bracket params", .{});
     };
 
     var T: []const u8 = "";
@@ -72,7 +72,7 @@ const std = @import("std");
     }
     const valid_T = std.mem.eql(u8, T, "f16") or std.mem.eql(u8, T, "f32") or std.mem.eql(u8, T, "f64");
     if (!valid_T or I == 0 or J == 0 or J % 4 != 0) {
-        return fail(allocator, reporter, loc, module, "gemv.*: params are T in {{f16,f32,f64}}, I>0, J>0 multiple of 4 (got T='{s}' I={d} J={d})", .{ T, I, J });
+        return fail(allocator, reporter, loc, module, "gemv.kernel[*]: params are T in {{f16,f32,f64}}, I>0, J>0 multiple of 4 (got T='{s}' I={d} J={d})", .{ T, I, J });
     }
 
     var name: []const u8 = "";
@@ -82,7 +82,7 @@ const std = @import("std");
         }
     }
     if (name.len == 0) {
-        return fail(allocator, reporter, loc, module, "gemv.*: kernel needs (name: \"k\") — it names the generated decls", .{});
+        return fail(allocator, reporter, loc, module, "gemv.kernel[*]: kernel needs (name: \"k\") — it names the generated decls", .{});
     }
 
     // bit pattern width for the checksum: f16->u16, f32->u32, f64->u64

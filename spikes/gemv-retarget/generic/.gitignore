@@ -1,0 +1,4 @@
+generic_*
+gemv_wasm*
+gemv_test*
+compiler_env.json

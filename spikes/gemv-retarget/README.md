@@ -140,6 +140,11 @@ transform proc parses itself (what `gemv.kz`'s proc already does with
 stdlib helpers linked into the backend compiler. `.*` stays pure
 namespace globbing (`log.*`, `ring.*`); `gemv.kernel[*]` keeps
 parameterization bracket-local so the two mechanisms stay orthogonal.
-Implementation (unbuilt): parser accepts `[*]` as bracket content on
-declared names; matcher rule = pieces match exactly + declared `[*]` ↔
-invocation has any bracket tail. No marker → `KORU040` stands.
+IMPLEMENTED 2026-10-23 (koru main.zig + visitor_emitter.zig): needed
+zero grammar changes — the parser already accepted bracket tails on decl
+names and matchSegment's middle-wildcard rule already matched `kernel[*]`
+→ `kernel[T:…]`; the only break was Zig-ident mangling (`gemv_kernel[_star_]`
+— `[`/`]` passed through raw). Escape convention extended to `[ ] : ! ; , =`
+in both manglers. Pins: regression 700_012 (accept) + 700_013 (bare
+`ring.new` vs `ring.new[*]` → KORU040). `generic/gemv.kz` now uses the
+canonical `gemv.kernel[*]` surface; four monomorphs still diff=0.
