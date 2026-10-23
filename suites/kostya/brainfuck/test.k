@@ -8,9 +8,11 @@
 //   quiet:   QUIET env set -> '.' accumulates Fletcher-16 (sum1 += n,
 //            sum2 += sum1, mod 255) and prints "Output checksum: N"
 //            after the run; unset -> '.' writes the byte to stdout.
-//   timed:   the program file (argv[1]) is read once, folded, and
-//            interpreted ONCE between send-pid and send("stop") — the
-//            reference's exact shape (parse is inside the timed region).
+//   timed:   send-pid, then the program file (argv[1]) is read once,
+//            folded, and interpreted ONCE before send("stop"). The
+//            reference announces after its file read and brackets
+//            parse+interp only; ours additionally includes the file
+//            read — strictly more work inside the window, not less.
 //
 // Faithfulness differences, stated:
 // - Tape is a fixed i32 grid (65536 cells) vs the reference's growable
@@ -169,13 +171,13 @@ for(VERI)
             | yes |> std/store:stored { st.quiet: 1 }
             | no |> std/store:stored { st.quiet: 0 }
         |> std/args:get(index: 1)
-            | arg p |> std/fs:read-lines(path: p)
-                ! line l |> for(l)
-                    ! each ch |> emit(c: ch): _
-                | done _ |> flush(): _
-                    |> notify:send-pid(name: "Koru", port: 9001): _
-                    |> interp(ip: 0, pos: 0): _
-                    |> notify:send(msg: "stop", port: 9001): _
+            | arg p |> notify:send-pid(name: "Koru", port: 9001): _
+                |> std/fs:read-lines(path: p)
+                    ! line l |> for(l)
+                        ! each ch |> emit(c: ch): _
+                    | done _ |> flush(): _
+                        |> interp(ip: 0, pos: 0): _
+                        |> notify:send(msg: "stop", port: 9001): _
                     |> idv(v: st.s1 + st.s2 * 256): chk2
                     |> if(st.quiet != 0)
                         | then |> std/io:print.ln("Output checksum: {{ chk2:d }}")

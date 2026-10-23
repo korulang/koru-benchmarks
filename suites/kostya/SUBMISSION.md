@@ -41,6 +41,10 @@ exact diff.
   non-quiet output **byte-identical** to the reference, hello-world
   verify gate 42059 through the real parse+interp path. The notify
   shim is unchanged — `putb` is one more proc on the same module.
+  **Bracket fix at review time:** the announce had sat after the
+  fold-parse, timing interp only; the reference brackets parse+interp
+  (read outside). Now `send-pid` precedes the file read — our window
+  is strictly a superset of the reference's.
 - `matmul/test.k` verified end-to-end: argv parsing matches the
   reference (`argv[1]` → n, missing/unparseable/negative → 100), the
   `calc(101)` self-check gates the announce (−18.6716666 vs −18.67±0.1),
