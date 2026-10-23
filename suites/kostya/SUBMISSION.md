@@ -96,10 +96,15 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) PATH=$(KORU_ZIG):$(PATH) \
    `compiler.materialize-build.kz`). Options: a `koru` wrapper script
    that prepends zig-0.15.2 to PATH (zero toolchain change), or add a
    `KORU_ZIG` env override to koruc (cleaner, a toolchain change).
-3. **koruc output path.** `koruc` writes `a.out` + backend artifacts to
-   CWD; the Makefile wants `target/base64_koru`. Either `koruc -o`
-   learns to name the executable, or the recipe moves `a.out` after
-   build and cleans the emitted `*.zig`/`zig-out` litter. Cosmetic.
+3. ~~**koruc output path.**~~ **Resolved — `-o` already exists.**
+   `koruc -OReleaseFast -o target/base64_koru test.k` lands the binary
+   at the name given (verified: `-o` parsed at `src/main.zig:7538`,
+   consumed for `exe_name`; regression-pinned at `220_056`, which also
+   asserts no `a.out` is written). The recipe keeps the Makefile's
+   `| target` order-only prereq — `-o` does not create the parent dir,
+   matching `cc`. Remaining litter is the emitted `backend*.zig` /
+   `zig-out/` in the task dir — a `clean`-target or `.gitignore`
+   concern, cosmetic either way.
 4. **Task coverage.** All five tasks staged and proven end-to-end:
    base64, brainfuck, json, matmul, primes. The drivers reuse the
    proven kernels; per-task verify gates, notify brackets, and
