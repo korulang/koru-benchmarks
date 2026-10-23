@@ -39,27 +39,78 @@ Note: LLVM kept `fmul`+`fadd` separate (strict FP, no FMA contraction) —
 that's why the two paths agree bitwise; his `MulAdd` is fused. An honest
 difference: ours is exact-order, his is FMA-fused.
 
+## The comptime-transform route — `generic/gemv.kz` (verified 2026-10-23)
+
+`generic/gemv.kz` closes the "one binary, four monomorphs" gap via the
+generics-as-library pattern: a `~[comptime|transform] pub tor gemv.*` +
+`~proc gemv.*|zig` handler parses bracket params at compile time and
+*writes the program* — each invocation is replaced by a specialized set of
+Zig decls (storage + init + fast kernel + naive oracle + report):
+
+```
+~gemv.kernel[T:f32;I:1024;J:512](name: "k_f32")   // no tail
+~gemv.kernel[T:f32;I:1002;J:512](name: "k_f32t")  // tail (1002 % 4 = 2)
+~gemv.kernel[T:f16;I:1024;J:512](name: "k_f16")   // fp16
+~gemv.kernel[T:f16;I:1002;J:512](name: "k_f16t")  // fp16 + tail
+```
+
+Verified: `koruc build gemv.kz` → one `a.out` containing all four
+monomorphs; `output_emitted.zig` shows four concrete decl-sets
+(`k_f32_w: [524288]f32`, `k_f16_w: [524288]f16`, …). Runtime:
+
+```
+k_f32  [T=f32 I=1024 J=512]: fast=1962631888896 naive=1962631888896 diff=0
+k_f32t [T=f32 I=1002 J=512]: fast=1922704277504 naive=1922704277504 diff=0
+k_f16  [T=f16 I=1024 J=512]: fast=25571280     naive=25571280     diff=0
+k_f16t [T=f16 I=1002 J=512]: fast=25055448     naive=25055448     diff=0
+```
+
+Cross-target disassembly of the generated kernels (ReleaseFast):
+
+| target | emitted |
+|---|---|
+| arm64 NEON | `fmul.4s v5,v5,v0[0]` + `fadd.4s` — 4 broadcast-mul chains (also 4× unrolled i in places); f16 monomorphs: `fmul.8h`/`fadd.8h` |
+| x86_64 AVX2 (v3) | `vbroadcastss` + `vmulps`/`vaddps` ymm (230 vector fp ops total) |
+| x86_64 AVX-512 (v4) | 368 zmm + 1023 ymm — v4 actually uses zmm here |
+| wasm32+simd128 | `v128.load32_splat`, `f32x4.mul`, `f32x4.add`, `f32x4.splat`; f16 monomorphs scalarize to `f32.mul`/`f32.add` (wasm has no fp16 type) |
+
+This is the "and more": the transform isn't a template stamp — it reads the
+invocation site's bracket params and synthesizes a program artifact
+(typed storage, unrolled kernel, differential oracle, report fn) that never
+existed in source. C++ `if constexpr` chooses between arms the programmer
+wrote; this writes the arms.
+
+## Gotchas discovered (worth a pin)
+
+- `~[transform] proc` ≠ `~proc`: the `[transform]` annotation routes the
+  event through `emitTransformProcEventStruct` which emits a FIXED
+  machine-ABI Input `{invocation,item,program,allocator,reporter}` —
+  `event_name` is dropped from Input while the callsite still writes it
+  → "no field named 'event_name'". Declaring a plain `~proc gemv.*|zig`
+  takes the input_shape path where `event_name: string` is honored
+  (700_011 shape). Possible compiler wart: the machine-ABI Input omits
+  `event_name` even though the dispatcher can pass it.
+- `SiteResult` is returned directly on the input_shape path —
+  `.{ .replacement = item }`, not `.{ .transformed = ... }`.
+- `std.fmt.allocPrint` caps at 32 args — split large templates.
+
 ## What this does NOT yet show
 
-- **One binary, four monomorphs.** The {f32,f16}×{tail,no-tail} axes were
-  exercised as separate compiles. Single-binary specialization in Koru has
-  two untested routes: `.kz` host generics (`comptime T: type` — template-
-  equal but arguably "that's Zig"), and `[comptime|transform]` bracket
-  generics (`kernel[T:f16]`, the generics-as-library pattern of
-  700_010/700_011/700_020) — the strictly-beyond-templates route.
 - **Explicit vector surface.** This probe leaned on the auto-vectorizer.
   When LLVM declines, the fallback is host-line `@Vector` (already used in
   `koru_std/field.kz`, `compress.kz`) — real but unmeasured here.
-- **fp16 on x86/wasm.** arm64 has native fp16 SIMD; other targets promote.
-  His `UchenLoadU` handles that explicitly; our version is unmeasured
-  cross-target.
+- **fp16 on x86/wasm.** arm64 has native fp16 SIMD; wasm scalarizes (no
+  fp16 ops at all in the spec). His `UchenLoadU` handles promote-on-load
+  explicitly; ours delegates to the backend.
 
 ## Blog-post angle (if pursued)
 
-The strongest honest frame isn't "we have Highway too" — it's that his
-4-monomorph template exists to (a) pick dtypes and (b) excise the tail
-branch, and the Koru source needed *no* specialization machinery for either:
-the tail never had to be declared and the dtype lives in the declaration
-body (`{ v: 0.0[f16] }`). The "and more" claim wants the comptime-transform
-route built out (generics-as-library) before it's printable — today that's
-the gap, not a verdict.
+The honest frame: his 4-monomorph template exists to (a) pick dtypes and
+(b) excise the tail branch. The plain `.k` source needed no specialization
+machinery for either. And the "and more" is now concrete, not asserted:
+`generic/gemv.kz` shows a comptime transform that reads bracket params and
+*generates the specialized program* — storage, kernel, oracle — something
+no template mechanism can express. Link back to the X post; show
+`output_emitted.zig` and the disassembly, not benchmarks — no perf claim
+against Uchen is being made (different workload; langguess end-to-end
+remains unmeasured).
