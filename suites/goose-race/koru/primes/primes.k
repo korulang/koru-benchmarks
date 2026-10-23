@@ -22,6 +22,9 @@ std/grid:new(tn, size: 2500000) { fc: 0[u32], nc: 0[u32], tm: 0[u32] }
 std/grid:new(rn, size: 2500000) { ch: 0[u8], nd: 0[u32] }
 std/grid:new(que, size: 2500000) { nd: 0[u32], pf: 0[u32] }
 std/grid:new(res, size: 8192) { v: 0[u32] }
+// declared borrow of res.v for the sort — raw-slice contract, no mangled
+// generated-name reach.
+std/grid:slice(resv) { res.v }
 std/store:new(st) { nn: 0[i64], nr: 0[i64], nq: 0[i64], fr: 0[i64], nres: 0[i64], np: 0[i64], lim: 0[i64], t1: 0[i64], t2: 0[i64], t3: 0[i64] }
 
 pub tor ret0 {} -> i64
@@ -229,5 +232,5 @@ show = for(0..@as(usize, @intCast(st.nres)))
 
 // verify (find(100,2) = [2,23,29] — gate-visible if wrong), then scored run
 find(lim: 100, pfx: 2): _ |> find(lim: 5000000, pfx: 32338): _
-    |> std/array:sort(main_module.__koru_grid_res.v[0..@as(usize, @intCast(st.nres))]): _
+    |> std/array:sort(resv[0..@as(usize, @intCast(st.nres))]): _
     |> show()

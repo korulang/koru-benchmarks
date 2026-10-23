@@ -173,9 +173,12 @@ KORU_BUILD = KORU_STDLIB=$(KORU_STDLIB) KORU_ZIG=$(KORU_ZIG) \
 d=suites/kostya/matmul; mkdir -p /tmp/kverify
 sed 's/port: 9001/port: 19001/' $d/test.k > /tmp/kverify/test.k
 cp $d/notify.kz /tmp/kverify/ && cd /tmp/kverify
-KORU_STDLIB=<koru>/koru_std koruc -OReleaseFast test.k
-ruby <koru-benchmarks>/$d/xtime_local.rb ./a.out   # listens on :19001
+# same recipe as KORU_BUILD in common/commands.mk (koruc needs Zig 0.15.2,
+# not the suite's 0.16.0 — KORU_ZIG names it explicitly)
+KORU_STDLIB=<koru>/koru_std KORU_ZIG=<zig-0.15.2> \
+    koruc -OReleaseFast -o test_bin test.k
+ruby <koru-benchmarks>/$d/xtime_local.rb ./test_bin  # listens on :19001
 cat target/results.log
-# task args: matmul takes MSIZE (e.g. ./a.out 1500); brainfuck takes the
+# task args: matmul takes MSIZE (e.g. ./test_bin 1500); brainfuck takes the
 # program file; json reads /tmp/1.json (json/generate_json.rb makes it)
 ```
