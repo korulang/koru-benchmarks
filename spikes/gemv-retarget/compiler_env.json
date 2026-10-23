@@ -1,0 +1,1 @@
+{"lang":"zig","library":false,"flags":["release=fast","build=macos"],"entry_file":"/Users/larsde/src/koru-benchmarks/spikes/gemv-retarget/gemv.k","entry_dir":"/Users/larsde/src/koru-benchmarks/spikes/gemv-retarget","project_root":"/Users/larsde/src/koru-benchmarks/spikes/gemv-retarget","koru_home":"/Users/larsde/src/koru","env":{}}
