@@ -114,3 +114,32 @@ no template mechanism can express. Link back to the X post; show
 `output_emitted.zig` and the disassembly, not benchmarks — no perf claim
 against Uchen is being made (different workload; langguess end-to-end
 remains unmeasured).
+
+## Grammar note: glob paths, brackets, and the `[*]` ruling (2026-10-23)
+
+Probing the dispatch grammar around the generic transform produced a full
+truth table (all four rows compiled/refused this session):
+
+| declared tor | invocation | result |
+|---|---|---|
+| `gemv.kernel` | `gemv.kernel[T:…]` | refuse — `KORU040 unknown tor 'gemv.kernel[T:…]'`: the bracket text is glued INTO the path segment, so the exact name can never match a parameterized call |
+| `gemv.kernel*` | anything | refuse — `PARSE003`: `*` must be a whole `.`-separated piece; it is a segment wildcard, NOT a string-suffix glob |
+| `gemv.*` | `gemv.kernel[T:…]` | accept — `*` matches the `kernel[T:…]` piece whole |
+| `gemv.kernel.*` | `gemv.kernel.*[T:…]` | accept — literal `*` spelled in BOTH declaration and call site |
+
+Two findings: a glob is mandatory for bracketed dispatch (no exact tor can
+match), and the literal-star invocation `gemv.kernel.*[T]` is an emergent
+spelling — works end to end, absent from the pinned tests.
+
+**Ruling (Lars):** the parameter marker belongs in the parameter channel.
+Desired surface is `tor gemv.kernel[*]` + invocation `gemv.kernel[T:…]` —
+`[*]` is a single opaque marker meaning "this name admits a bracket tail,"
+NOT a bracket grammar. The bracket content stays an opaque string the
+transform proc parses itself (what `gemv.kz`'s proc already does with
+`event_name` today); conventional shapes (`k:v;` lists) can later ship as
+stdlib helpers linked into the backend compiler. `.*` stays pure
+namespace globbing (`log.*`, `ring.*`); `gemv.kernel[*]` keeps
+parameterization bracket-local so the two mechanisms stay orthogonal.
+Implementation (unbuilt): parser accepts `[*]` as bracket content on
+declared names; matcher rule = pieces match exactly + declared `[*]` ↔
+invocation has any bracket tail. No marker → `KORU040` stands.
