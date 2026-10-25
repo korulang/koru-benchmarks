@@ -1,2 +1,4 @@
 task	koru_s	koru_par_s	rust_s	serial_ratio	par_ratio	class
 clbg_spectralnorm	0.821	0.157	0.675	1.216	0.233	parallel (not serial-class)
+matmul_t4	6.968	0.815	5.794	1.203	0.141	parallel (ports Matmul::T4 semantics)
+binarytrees_arena	0.113	0.114	0.272	0.415	0.419	parallel-legal, memory-bound (no gain)
