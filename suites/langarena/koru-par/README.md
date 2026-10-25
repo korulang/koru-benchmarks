@@ -72,6 +72,6 @@ Until then this lane stays the separate track.
 
 ## Notes
 
-- `[parallel]` annotates mid-chain invocations; impls whose head call is
-  the loop open with `ret0(): _ |>` to seat it. `[parallel]<impl>` at
-  decl position parses but does not fan out (tracked gap).
+- `[parallel]` annotates mid-chain invocations (`|> [parallel]for(...)`)
+  AND impl decls (`[parallel]name = for(...)` — marks the head call;
+  wired in koru e8dc0cc). Both spellings land on `__parallel`.

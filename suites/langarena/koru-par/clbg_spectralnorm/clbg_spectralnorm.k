@@ -15,12 +15,10 @@
 //   vs the board's rust_s 0.675s this would read ratio ~0.23 — a
 //   DIFFERENT-CLASS number, not a serial-class win.
 //
-// Head-step note: `[parallel]` annotates mid-chain invocations, so
-// each impl opens with `ret0(): _ |>` to place the for in an
-// annotation slot. `[parallel]rau` at the impl position parses and
-// seeds the threaded flood but does NOT fan out (emitted code shows
-// pool decls, no spawnWg) — a tracked annotation-placement gap, not
-// intended semantics.
+// Spelling note: `[parallel]` on the impl decl marks the head call —
+// `[parallel]rau = for(0..1200)` IS the parallel loop. (Mid-chain
+// `|> [parallel]for(...)` also works; both lanes land on the same
+// `__parallel` template check.)
 
 // clbg_spectralnorm — LangArena CLBG::Spectralnorm, run.js scored
 // parameters (size=1200, iterations=132, warmup default
@@ -103,7 +101,7 @@ ret0 = if(0 == 0)
 // rau: gw = A·gu ; rav: gw = A·gv
 
 pub tor rau { } -> i64
-rau = ret0(): _ |> [parallel]for(0..1200)
+[parallel]rau = for(0..1200)
     ! each i |> capture { s: 0.0[f64] }
         ! as a |> for(0..1200)
             ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j))) * (@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j)) + 1.0) / 2.0 + @as(f64, @floatFromInt(i)) + 1.0) * gu_s[j] }
@@ -111,7 +109,7 @@ rau = ret0(): _ |> [parallel]for(0..1200)
     | done |> ret0(): _ -> 0
 
 pub tor rav { } -> i64
-rav = ret0(): _ |> [parallel]for(0..1200)
+[parallel]rav = for(0..1200)
     ! each i |> capture { s: 0.0[f64] }
         ! as a |> for(0..1200)
             ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j))) * (@as(f64, @floatFromInt(i)) + @as(f64, @floatFromInt(j)) + 1.0) / 2.0 + @as(f64, @floatFromInt(i)) + 1.0) * gv_s[j] }
@@ -123,7 +121,7 @@ rav = ret0(): _ |> [parallel]for(0..1200)
 // follows j (the A row index), i.e. eval_a(j, i) as the reference.
 
 pub tor rtv { } -> i64
-rtv = ret0(): _ |> [parallel]for(0..1200)
+[parallel]rtv = for(0..1200)
     ! each i |> capture { s: 0.0[f64] }
         ! as a |> for(0..1200)
             ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw_s[j] }
@@ -131,7 +129,7 @@ rtv = ret0(): _ |> [parallel]for(0..1200)
     | done |> ret0(): _ -> 0
 
 pub tor rtu { } -> i64
-rtu = ret0(): _ |> [parallel]for(0..1200)
+[parallel]rtu = for(0..1200)
     ! each i |> capture { s: 0.0[f64] }
         ! as a |> for(0..1200)
             ! each j |> captured { s: a.s + 1.0 / ((@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i))) * (@as(f64, @floatFromInt(j)) + @as(f64, @floatFromInt(i)) + 1.0) / 2.0 + @as(f64, @floatFromInt(j)) + 1.0) * gw_s[j] }
