@@ -72,23 +72,20 @@ build_lang() {
   local cdir="$SUITE/reference/cases/$name"
   case "$lang" in
     koru)
-      local kdir="$SUITE/koru/$name"; [ -f "$kdir/$name.k" ] || return 1
-      local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
-      ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
+      local kdir="$SUITE/koru/$name"; local ksrc=""
+      [ -f "$kdir/$name.kz" ] && ksrc="$name.kz"; [ -f "$kdir/$name.k" ] && ksrc="$name.k"
+      [ -n "$ksrc" ] || return 1
+      local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$ksrc" "$w/"
+      ( cd "$w" && "$KORUC" build --release=fast "$ksrc" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     koru-fold)
       local kdir="$SUITE/koru-fold/$name"; [ -f "$kdir/$name.k" ] || return 1
       local w="$TMP/kf_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     koru-par)
-      local kdir="$SUITE/koru-par/$name"; [ -f "$kdir/$name.k" ] || return 1
-      local w="$TMP/kp_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
-      ( cd "$w" && "$KORUC" build --release=fast "$name.k" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
-    koru-val)
-      # Owned-value ports need host decls (mint/discharge procs) — .kz allowed.
-      local kdir="$SUITE/koru-val/$name"; local ksrc=""
+      local kdir="$SUITE/koru-par/$name"; local ksrc=""
       [ -f "$kdir/$name.kz" ] && ksrc="$name.kz"; [ -f "$kdir/$name.k" ] && ksrc="$name.k"
       [ -n "$ksrc" ] || return 1
-      local w="$TMP/kv_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$ksrc" "$w/"
+      local w="$TMP/kp_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$ksrc" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$ksrc" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     c)       have cc     && [ -f "$cdir/$name.c" ]  && cc -O2 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     # Max-opt columns matching koruc ReleaseFast / rustc opt-level=3 —
@@ -127,9 +124,9 @@ build_lang() {
   esac
 }
 
-LANGS=(koru koru-fold koru-par koru-val c cgcc3 cclang cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p koru-v c gcc3 clang cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "------" "------" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
+LANGS=(koru koru-fold koru-par c cgcc3 cclang cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p c gcc3 clang cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "------" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
 
 # The board is driven by reference/cases (the complete 22-kernel list), not by
 # the koru/ ports — a kernel Koru can't express yet must still show its row so
@@ -169,7 +166,7 @@ for casedir in "$SUITE"/reference/cases/*/; do
     fi
   done
   printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[koru-val]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
   unset ms
 done
 
@@ -244,7 +241,6 @@ out = {
             "koru": "koruc build (ReleaseFast)",
             "koru-fold": "koruc build (ReleaseFast) — flat fold/identity port",
             "koru-par": "koruc build (ReleaseFast) — [parallel]-annotated port (fold split / fork-join)",
-            "koru-val": "koruc build (ReleaseFast) — owned-value port (.kz allowed); hoistable invariant prefixes lift",
             "c": "cc -O2",
             "cgcc3": "gcc -O3 (real GCC only — ABSENT when gcc is clang)",
             "cclang": "clang -O3",
