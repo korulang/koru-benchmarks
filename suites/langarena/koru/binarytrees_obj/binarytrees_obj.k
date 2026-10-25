@@ -1,46 +1,46 @@
 // LangArena Binarytrees::Obj — crystal-lang / reference/binarytrees_obj.*
 //
-// Object-flavor binary tree on the `[tree]` store substrate: rows are heap
-// nodes and the store synthesizes a `parent` self-FK (per 690_048). Where the
-// arena port stores branded child handles in `left`/`right` columns, this one
-// attaches children by writing their `parent` — the object-graph direction.
+// Object-flavor binary tree on `std/tree`: real owned heap nodes declared in
+// pure .k — `std/tree:node(Node)` registers the kind, `mint` creates each
+// node (`*Node<owned!>`), `dispose` consumes the root and frees recursively.
+// This port replaces the `[tree]`-store-row version: the store's parent-FK
+// substrate was a stand-in for the thing this kernel means — an object graph.
 //
 // Scored params (run.js): depth = 20, iterations = 30, warmup = 6 → 36
 //   accumulated sums of (item+1) over all nodes. depth 20 → 2^21-1 = 2097151
 //   nodes; expected checksum 75497436. Smoke params (test.js): depth = 4,
 //   iterations = 3 (+1 warmup) → 31 nodes × 4 = 124.
 //
-// Substrate note (honest gap, not hidden): `std/store:preorder` walks the
-// self-FK with a capacity-sized stack-local DFS buffer (segfaults at
-// capacity ~2M) and an O(len²) full-scan children lookup — unusable at scored
-// size. The checksum is order-free (Σ(item+1) over all rows), so a row
-// `query` computes the identical sum in O(len) and is the honest equivalent.
+// The each-body is hoist-clean: `build |> sum |> dispose` never reads the
+// item, so the invariant prefix lifts onto `| done` — one tree built, folded,
+// and freed; the loop carries only the accumulate.
 
 import std/io
-import std/store
+import std/tree
 
-[tree]std/store:new(tree, capacity: 2097151) { item: i64 }
-std/store:new(res) { acc: 0[i64] }
+std/tree:node(Node) { item: i64, left: ?Node, right: ?Node }
 
-// build(item, depth) — inserts the node row, recurses for children, and
-// attaches each child by writing its synthesized `parent` link. The [tree]
-// store's self-FK substrate holds the object graph; parent links point
-// child→parent, the mirror of the arena port's left/right handles.
-pub tor build { item: i64, depth: i64 } -> i64
-build = std/store:insert(tree) { item }
-| row h |> if(depth > 0)
+// build(item, depth) — mints the node with fresh children as owned edges.
+// Items step ±(1 << (depth-1)) per level — the LangArena checksum shape.
+pub tor build { item: i64, depth: i64 } -> *Node<owned!>
+build = if(depth > 0)
     | then |> build(item: item - (@as(i64, 1) << @as(u6, @intCast(depth - 1))), depth: depth - 1): l
-        |> build(item: item + (@as(i64, 1) << @as(u6, @intCast(depth - 1))), depth: depth - 1): r
-        |> std/store:stored { tree[l].parent: h }
-        |> std/store:stored { tree[r].parent: h } -> h
-    | else -> h
+           |> build(item: item + (@as(i64, 1) << @as(u6, @intCast(depth - 1))), depth: depth - 1): r
+           |> std/tree:mint(Node) { item, left: l, right: r }: h -> h
+    | else |> std/tree:mint(Node) { item, left: null, right: null }: h -> h
 
-// for(0..36) — 6 warmups + 30 iterations: clear the arena, build a depth-20
-// tree, visit every row folding (item + 1) into the u32 checksum.
-for(0..36)
-! each _ |> std/store:clear(tree)
-    |> build(item: 0, depth: 20): root
-    |> std/store:query(tree)
-        ! query s |> std/store:stored { res.acc: @rem(res.acc + s.item + 1, 4294967296) }
+// sum — the order-free checksum fold: Σ(item + 1) over all nodes.
+pub tor sum { t: ?*Node<*> } -> i64
+sum = if(t != null)
+    | then |> sum(t: t.?.left): l |> sum(t: t.?.right): r -> t.?.item + 1 + l + r
+    | else -> 0
 
-std/io:print.ln("{{ res.acc:d }}")
+// for(0..36) — 6 warmups + 30 iterations: build a depth-20 tree, fold
+// (item + 1) into the u32 checksum, dispose.
+capture { acc: 0[i64] }
+! as g |> for(0..36)
+    ! each _ |> build(item: 0, depth: 20): t
+        |> sum(t): c
+        |> std/tree:dispose(t): _
+        |> captured { acc: @rem(g.acc + c, 4294967296) }
+| captured res |> std/io:print.ln("{{ res.acc:d }}")
