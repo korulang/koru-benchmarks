@@ -1,0 +1,48 @@
+~import std/io
+
+// binarytrees — owned-value port: a recursive struct + mint/free-tree
+// obligations, real malloc/free per node. Unlike the arena port this measures
+// the allocation pressure the kernel nominally stresses — and unlike it, the
+// each-body is hoist-clean: `make(d:13) |> check` never reads the item, so
+// hoistInvariantLoopPrefix lifts it out of the loop (one tree built+checked,
+// 1200 additions, discharge on |done) — the same move GHC's full-laziness
+// pass makes on the Haskell entry.
+
+const std = @import("std");
+
+const Node = struct { left: ?*Node, right: ?*Node };
+
+fn freeNode(t: ?*Node) void {
+    if (t) |n| {
+        freeNode(n.left);
+        freeNode(n.right);
+        std.heap.c_allocator.destroy(n);
+    }
+}
+
+~tor mint-node { left: ?*Node<!owned>, right: ?*Node<!owned> } -> *Node<owned!>
+~proc mint-node|zig {
+    const n = std.heap.c_allocator.create(Node) catch unreachable;
+    n.* = .{ .left = left, .right = right };
+    return n;
+}
+
+~tor free-tree { t: ?*Node<!owned> }
+~proc free-tree|zig {
+    freeNode(t);
+}
+
+~pub tor make { d: i64 } -> *Node<owned!>
+~make = if(d > 0)
+    | then |> make(d: d - 1): l |> make(d: d - 1): r |> mint-node(left: l, right: r): n -> n
+    | else |> mint-node(left: null, right: null): n -> n
+
+~pub tor check { t: ?*Node<*> } -> i64
+~check = if(t != null)
+    | then |> check(t: t.?.left): l |> check(t: t.?.right): r -> 1 + l + r
+    | else -> 0
+
+~capture { acc: 0[i64] }
+! as g |> for(0..1200)
+    ! each _ |> make(d: 13): t |> check(t): c |> free-tree(t): _ |> captured { acc: g.acc + c }
+| captured res |> std/io:print.ln("{{ res.acc:d }}")
