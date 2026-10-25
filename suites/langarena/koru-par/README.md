@@ -59,6 +59,17 @@ prefix-chain per symbol is inherently serial), json/csv/template parsers
 interpreters, logparser/cache_sim/words (streaming), maze/graph
 (frontier-serial port shapes).
 
+## Submission legality (checked 2026-10-25)
+
+`run.js` scores `Matmul::Single`, `Matmul::T4`, `Matmul::T8`, and
+`Matmul::T16` as separate task names — **parallel classes are
+first-class in this arena**, so a `matmul_tN` port is a legal
+submission, not a loophole. The catch: the T-number is a fixed-width
+contract (T4 = 4 workers), while `[parallel]for` sizes to
+`getCpuCount()`. An honest T-class port needs a pinned width — a
+`[parallel(N)]` spelling or a width knob is a pending language ruling.
+Until then this lane stays the separate track.
+
 ## Notes
 
 - `[parallel]` annotates mid-chain invocations; impls whose head call is
