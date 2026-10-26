@@ -29,18 +29,17 @@ build = if(depth > 0)
            |> std/tree:mint(Node) { item, left: l, right: r }: h -> h
     | else |> std/tree:mint(Node) { item, left: null, right: null }: h -> h
 
-// sum — the order-free checksum fold: Σ(item + 1) over all nodes.
-pub tor sum { t: ?*Node<*> } -> i64
-sum = if(t != null)
-    | then |> sum(t: t.?.left): l |> sum(t: t.?.right): r -> t.?.item + 1 + l + r
-    | else -> 0
-
+// The checksum fold is the lane verb: `std/tree:fold` — the node arm reads
+// payload fields as payload and edge fields as folded children; `| null`
+// is the empty case every `?` edge reaches.
 // for(0..36) — 6 warmups + 30 iterations: build a depth-20 tree, fold
 // (item + 1) into the u32 checksum, dispose.
 capture { acc: 0[i64] }
 ! as g |> for(0..36)
     ! each _ |> build(item: 0, depth: 20): t
-        |> sum(t): c
+        |> std/tree:fold(t, as: i64): c
+            | node n -> n.item + 1 + n.left + n.right
+            | null -> 0
         |> std/tree:dispose(t): _
         |> captured { acc: @rem(g.acc + c, 4294967296) }
 | captured res |> std/io:print.ln("{{ res.acc:d }}")
