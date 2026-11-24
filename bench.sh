@@ -192,8 +192,14 @@ if [ -z "$FILTER" ]; then
   koru_repo="$(cd "$(dirname "$KORUC")/../.." 2>/dev/null && pwd)"
   koru_commit="$(git -C "$koru_repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   koru_dirty="$(git -C "$koru_repo" status --porcelain 2>/dev/null | grep -q . && echo true || echo false)"
-  mkdir -p "$ROOT/results"
-  ROWS_FILE="$ROWS" OUT_FILE="$ROOT/results/latest.json" \
+  mkdir -p "$ROOT/results/runs"
+  # Every full run is archived immutably under results/runs/ — latest.json is
+  # the pointer to the newest run, never the only copy. board_class separates
+  # publishable quiet-rig boards (bench-on-hetzner.sh exports BOARD_CLASS)
+  # from dev-loop workstation runs so the two can never be mistaken.
+  ARCHIVE_FILE="$ROOT/results/runs/$(date -u +%Y%m%dT%H%M%SZ)_$(hostname -s)_$(uname -m)_${koru_commit}.json"
+  ROWS_FILE="$ROWS" OUT_FILE="$ROOT/results/latest.json" ARCHIVE_FILE="$ARCHIVE_FILE" \
+  BOARD_CLASS="${BOARD_CLASS:-local-workstation}" \
   GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" OS="$(uname -s)" ARCH="$(uname -m)" CPU="$cpu" \
   LOADAVG="$loadavg" NCPU="$ncpu" \
   KORU_COMMIT="$koru_commit" KORU_DIRTY="$koru_dirty" WARMUP="$WARMUP" MINRUNS="$MINRUNS" \
@@ -226,6 +232,7 @@ for line in open(os.environ["ROWS_FILE"]):
 
 out = {
     "suite": "osprey-compute-kernels",
+    "board_class": os.environ.get("BOARD_CLASS", "local-workstation"),
     "generated_at": os.environ["GENERATED_AT"],
     "machine": {
         "os": os.environ["OS"], "arch": os.environ["ARCH"], "cpu": os.environ["CPU"],
@@ -275,9 +282,16 @@ out = {
     "langs": langs_seen,
     "kernels": rows,
 }
+payload = json.dumps(out, indent=2) + "\n"
 with open(os.environ["OUT_FILE"], "w") as f:
-    json.dump(out, f, indent=2)
-    f.write("\n")
+    f.write(payload)
+archive = os.environ.get("ARCHIVE_FILE")
+if archive:
+    os.makedirs(os.path.dirname(archive), exist_ok=True)
+    with open(archive, "w") as f:
+        f.write(payload)
 print(f"\nBoard persisted: {os.environ['OUT_FILE']}")
+if archive:
+    print(f"Board archived:  {archive}")
 PYEOF
 fi
