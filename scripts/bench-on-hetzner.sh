@@ -133,7 +133,7 @@ uptime
 docker run --rm -v /root/kb/results:/bench/results koru-bench ./bench.sh
 EOF
 
-STAMP="$(date +%Y-%m-%d)_hetzner_${SIZE}_koru-${KORU_REF}"
+STAMP="$(date +%Y-%m-%d)_hetzner_${LOCATION}_${SIZE}_koru-${KORU_REF}"
 mkdir -p "$ROOT/results/droplet"
 scp -i "$SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new "root@$IP:/root/kb/results/latest.json" "$ROOT/results/droplet/${STAMP}.json"
 echo "✓ results → results/droplet/${STAMP}.json  (x86_64 board — do NOT merge into the arm64 board)"
