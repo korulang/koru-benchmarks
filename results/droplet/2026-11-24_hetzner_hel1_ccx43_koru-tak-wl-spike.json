@@ -1,0 +1,1592 @@
+{
+  "suite": "osprey-compute-kernels",
+  "generated_at": "2026-11-24T02:58:01Z",
+  "machine": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "cpu": "AMD EPYC-Milan Processor",
+    "load_avg": "1.66 1.75 1.16",
+    "ncpu": 16
+  },
+  "koru": {
+    "commit": "48d4818cc",
+    "dirty": false
+  },
+  "protocol": {
+    "tool": "hyperfine -N",
+    "warmup": 3,
+    "min_runs": 10,
+    "flags": {
+      "koru": "koruc build (ReleaseFast)",
+      "koru-fold": "koruc build (ReleaseFast) \u2014 flat fold/identity port",
+      "koru-par": "koruc build (ReleaseFast) \u2014 [parallel]-annotated port (fold split / fork-join)",
+      "c": "cc -O2",
+      "cgcc3": "gcc -O3 (real GCC only \u2014 ABSENT when gcc is clang)",
+      "cclang": "clang -O3",
+      "rust": "rustc -C opt-level=3 -C overflow-checks=off",
+      "haskell": "ghc -O2",
+      "ocaml": "ocamlopt -O3 -unsafe",
+      "osprey": "osprey --compile (release)",
+      "cmap": "cc -O2 (hand-rolled string map)",
+      "c3": "c3c compile -O5",
+      "odin": "odin build -o:speed",
+      "mojo": "mojo build (default -O3)",
+      "bend": "bend build \u2192 native via clang (BendRT)",
+      "bend-par": "bend build \u2192 native via clang \u2014 parallel-fork variant"
+    }
+  },
+  "toolchains": {
+    "c": "cc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "cgcc3": "gcc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "cclang": "Debian clang version 14.0.6",
+    "rust": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+    "haskell": "ghc 9.0.2",
+    "ocaml": "ocamlopt 4.13.1",
+    "osprey": "ABSENT",
+    "cmap": "cc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "c3": "ABSENT",
+    "odin": "ABSENT",
+    "mojo": "ABSENT",
+    "bend": "bend (version unknown)",
+    "bend-par": "bend (version unknown)"
+  },
+  "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg \u2014 the 1/5/15-min load average at run time) \u2014 NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
+  "langs": [
+    "koru",
+    "koru-fold",
+    "koru-par",
+    "c",
+    "cgcc3",
+    "cclang",
+    "cmap",
+    "rust",
+    "haskell",
+    "ocaml",
+    "osprey",
+    "c3",
+    "odin",
+    "mojo",
+    "bend",
+    "bend-par"
+  ],
+  "kernels": {
+    "ackermann": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 33.43,
+        "stddev_ms": 11.5
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 34.17,
+        "stddev_ms": 12.11
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 34.25,
+        "stddev_ms": 12.41
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 41.89,
+        "stddev_ms": 12.32
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 41.54,
+        "stddev_ms": 12.41
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 131.56,
+        "stddev_ms": 12.57
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 65.49,
+        "stddev_ms": 13.27
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 100.94,
+        "stddev_ms": 5.57
+      },
+      "bend-par": {
+        "status": "absent"
+      }
+    },
+    "binarytrees": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 55.16,
+        "stddev_ms": 7.53
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 3.37,
+        "stddev_ms": 1.22
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 281.61,
+        "stddev_ms": 14.14
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 279.57,
+        "stddev_ms": 14.38
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 336.71,
+        "stddev_ms": 13.7
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 604.38,
+        "stddev_ms": 15.31
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 3.43,
+        "stddev_ms": 0.68
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 95.65,
+        "stddev_ms": 8.0
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 199.98,
+        "stddev_ms": 12.07
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 826.86,
+        "stddev_ms": 9.34
+      }
+    },
+    "coins": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 45.17,
+        "stddev_ms": 12.49
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 16.15,
+        "stddev_ms": 1.22
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 34.99,
+        "stddev_ms": 9.38
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 33.84,
+        "stddev_ms": 12.26
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 40.76,
+        "stddev_ms": 10.35
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 57.04,
+        "stddev_ms": 7.28
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 69.17,
+        "stddev_ms": 11.83
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 78.44,
+        "stddev_ms": 6.68
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 81.84,
+        "stddev_ms": 7.44
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 19.75,
+        "stddev_ms": 2.28
+      }
+    },
+    "collatz": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 32.13,
+        "stddev_ms": 5.19
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 5.31,
+        "stddev_ms": 0.77
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 33.15,
+        "stddev_ms": 5.87
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 31.99,
+        "stddev_ms": 7.01
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 38.21,
+        "stddev_ms": 11.69
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 31.64,
+        "stddev_ms": 4.92
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 53.27,
+        "stddev_ms": 11.46
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 54.69,
+        "stddev_ms": 12.53
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 62.23,
+        "stddev_ms": 10.36
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 27.7,
+        "stddev_ms": 3.0
+      }
+    },
+    "coprime": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 96.05,
+        "stddev_ms": 14.17
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 9.32,
+        "stddev_ms": 0.76
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 91.42,
+        "stddev_ms": 12.0
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 86.71,
+        "stddev_ms": 8.01
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 82.34,
+        "stddev_ms": 6.94
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 87.41,
+        "stddev_ms": 10.81
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 100.7,
+        "stddev_ms": 11.4
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 100.38,
+        "stddev_ms": 7.64
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 89.63,
+        "stddev_ms": 8.13
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 67.11,
+        "stddev_ms": 5.49
+      }
+    },
+    "digitsum": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 21.74,
+        "stddev_ms": 1.3
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 5.34,
+        "stddev_ms": 0.62
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 21.17,
+        "stddev_ms": 3.39
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 22.03,
+        "stddev_ms": 2.0
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 22.21,
+        "stddev_ms": 2.03
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 20.4,
+        "stddev_ms": 1.47
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 59.71,
+        "stddev_ms": 12.75
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 37.62,
+        "stddev_ms": 12.08
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 52.51,
+        "stddev_ms": 12.34
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 29.45,
+        "stddev_ms": 3.51
+      }
+    },
+    "exprtree": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 7.47,
+        "stddev_ms": 0.22
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 31.06,
+        "stddev_ms": 6.1
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 30.45,
+        "stddev_ms": 6.07
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 33.45,
+        "stddev_ms": 2.29
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 22.69,
+        "stddev_ms": 2.0
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 15.2,
+        "stddev_ms": 1.49
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 13.38,
+        "stddev_ms": 2.05
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 28.92,
+        "stddev_ms": 5.25
+      },
+      "bend-par": {
+        "status": "absent"
+      }
+    },
+    "factorial": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 46.47,
+        "stddev_ms": 11.13
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 4.29,
+        "stddev_ms": 0.98
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 42.7,
+        "stddev_ms": 8.74
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 48.23,
+        "stddev_ms": 11.6
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 49.27,
+        "stddev_ms": 12.39
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 47.14,
+        "stddev_ms": 10.73
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 52.51,
+        "stddev_ms": 13.41
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 60.58,
+        "stddev_ms": 11.37
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 743.05,
+        "stddev_ms": 15.61
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 333.43,
+        "stddev_ms": 10.46
+      }
+    },
+    "fib": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 37.43,
+        "stddev_ms": 12.79
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 11.41,
+        "stddev_ms": 3.62
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 35.54,
+        "stddev_ms": 11.74
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 39.44,
+        "stddev_ms": 8.85
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 40.91,
+        "stddev_ms": 11.07
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 39.19,
+        "stddev_ms": 10.43
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 46.32,
+        "stddev_ms": 12.03
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 50.28,
+        "stddev_ms": 11.06
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 86.48,
+        "stddev_ms": 11.47
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 12.02,
+        "stddev_ms": 0.29
+      }
+    },
+    "gcdsum": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 88.99,
+        "stddev_ms": 8.78
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 8.57,
+        "stddev_ms": 0.78
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 107.19,
+        "stddev_ms": 14.0
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 101.12,
+        "stddev_ms": 11.42
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 97.05,
+        "stddev_ms": 12.92
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 91.86,
+        "stddev_ms": 9.91
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 104.59,
+        "stddev_ms": 13.52
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 106.92,
+        "stddev_ms": 10.57
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 94.2,
+        "stddev_ms": 8.53
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 64.7,
+        "stddev_ms": 4.46
+      }
+    },
+    "hanoi": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 46.64,
+        "stddev_ms": 12.25
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 22.02,
+        "stddev_ms": 1.72
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 30.51,
+        "stddev_ms": 1.58
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 53.12,
+        "stddev_ms": 8.93
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 63.63,
+        "stddev_ms": 10.84
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 72.93,
+        "stddev_ms": 9.42
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 66.49,
+        "stddev_ms": 8.8
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 157.42,
+        "stddev_ms": 13.03
+      },
+      "bend-par": {
+        "status": "absent"
+      }
+    },
+    "isqrt": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 40.44,
+        "stddev_ms": 11.93
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 4.48,
+        "stddev_ms": 1.14
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 34.48,
+        "stddev_ms": 12.06
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 30.75,
+        "stddev_ms": 10.3
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 37.35,
+        "stddev_ms": 11.54
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 33.72,
+        "stddev_ms": 11.55
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 41.82,
+        "stddev_ms": 12.24
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 41.87,
+        "stddev_ms": 12.99
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 45.89,
+        "stddev_ms": 8.31
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 38.29,
+        "stddev_ms": 5.43
+      }
+    },
+    "josephus": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 43.28,
+        "stddev_ms": 13.01
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 39.42,
+        "stddev_ms": 11.55
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 41.6,
+        "stddev_ms": 12.94
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 44.1,
+        "stddev_ms": 12.72
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 39.0,
+        "stddev_ms": 11.5
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 40.75,
+        "stddev_ms": 13.05
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 44.4,
+        "stddev_ms": 10.27
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 40.12,
+        "stddev_ms": 11.83
+      },
+      "bend-par": {
+        "status": "absent"
+      }
+    },
+    "listops": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 2.19,
+        "stddev_ms": 0.25
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 1.72,
+        "stddev_ms": 0.14
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 1.72,
+        "stddev_ms": 0.2
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 1.72,
+        "stddev_ms": 0.14
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 2.12,
+        "stddev_ms": 0.35
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 5.55,
+        "stddev_ms": 0.83
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 3.65,
+        "stddev_ms": 0.18
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 2.34,
+        "stddev_ms": 0.31
+      },
+      "bend-par": {
+        "status": "absent"
+      }
+    },
+    "mutual": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 32.35,
+        "stddev_ms": 4.07
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 3.72,
+        "stddev_ms": 0.56
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 26.15,
+        "stddev_ms": 3.04
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 25.66,
+        "stddev_ms": 3.1
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 27.25,
+        "stddev_ms": 3.22
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 25.76,
+        "stddev_ms": 3.83
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 27.97,
+        "stddev_ms": 2.88
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 43.1,
+        "stddev_ms": 11.03
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 4.25,
+        "stddev_ms": 0.66
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 5.21,
+        "stddev_ms": 0.75
+      }
+    },
+    "nestedloop": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 58.98,
+        "stddev_ms": 8.13
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 5.5,
+        "stddev_ms": 1.04
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 51.62,
+        "stddev_ms": 11.79
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 47.91,
+        "stddev_ms": 9.91
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 57.03,
+        "stddev_ms": 10.13
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 57.68,
+        "stddev_ms": 10.98
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 55.61,
+        "stddev_ms": 11.89
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 68.59,
+        "stddev_ms": 9.17
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 50.93,
+        "stddev_ms": 11.22
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 34.93,
+        "stddev_ms": 2.67
+      }
+    },
+    "pascal": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 39.69,
+        "stddev_ms": 10.92
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 40.53,
+        "stddev_ms": 8.06
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 41.65,
+        "stddev_ms": 9.16
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 47.3,
+        "stddev_ms": 12.01
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 42.68,
+        "stddev_ms": 11.1
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 54.17,
+        "stddev_ms": 8.91
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 69.49,
+        "stddev_ms": 10.43
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 380.7,
+        "stddev_ms": 12.94
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 47.17,
+        "stddev_ms": 0.47
+      }
+    },
+    "powmod": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 50.2,
+        "stddev_ms": 10.91
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 6.51,
+        "stddev_ms": 0.81
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 59.44,
+        "stddev_ms": 4.32
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 61.01,
+        "stddev_ms": 7.88
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 52.44,
+        "stddev_ms": 11.62
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 53.68,
+        "stddev_ms": 12.73
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 61.41,
+        "stddev_ms": 11.06
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 91.73,
+        "stddev_ms": 10.2
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 1426.55,
+        "stddev_ms": 19.22
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 429.2,
+        "stddev_ms": 15.29
+      }
+    },
+    "primes": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 30.74,
+        "stddev_ms": 4.69
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 7.86,
+        "stddev_ms": 0.47
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 25.99,
+        "stddev_ms": 9.98
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 34.59,
+        "stddev_ms": 4.08
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 31.31,
+        "stddev_ms": 3.93
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 30.7,
+        "stddev_ms": 3.22
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 34.68,
+        "stddev_ms": 7.83
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 34.36,
+        "stddev_ms": 7.06
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 42.86,
+        "stddev_ms": 12.42
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 29.61,
+        "stddev_ms": 3.54
+      }
+    },
+    "tak": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 47.45,
+        "stddev_ms": 20.06
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "measured",
+        "mean_ms": 74.11,
+        "stddev_ms": 17.08
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 68.04,
+        "stddev_ms": 6.35
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 48.18,
+        "stddev_ms": 12.84
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 68.54,
+        "stddev_ms": 7.51
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 69.91,
+        "stddev_ms": 12.97
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 83.34,
+        "stddev_ms": 9.48
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 58.54,
+        "stddev_ms": 9.44
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 210.43,
+        "stddev_ms": 39.07
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 23.21,
+        "stddev_ms": 1.09
+      }
+    },
+    "textstats": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 4.43,
+        "stddev_ms": 0.66
+      },
+      "koru-fold": {
+        "status": "absent"
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 4.66,
+        "stddev_ms": 0.38
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 4.7,
+        "stddev_ms": 0.09
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 4.57,
+        "stddev_ms": 0.61
+      },
+      "cmap": {
+        "status": "absent"
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 4.81,
+        "stddev_ms": 0.47
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 23.25,
+        "stddev_ms": 3.64
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 11.99,
+        "stddev_ms": 0.22
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 34.58,
+        "stddev_ms": 7.13
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 13.72,
+        "stddev_ms": 0.52
+      }
+    },
+    "wordfreq": {
+      "koru": {
+        "status": "measured",
+        "mean_ms": 10.19,
+        "stddev_ms": 1.36
+      },
+      "koru-fold": {
+        "status": "measured",
+        "mean_ms": 1.96,
+        "stddev_ms": 0.1
+      },
+      "koru-par": {
+        "status": "absent"
+      },
+      "c": {
+        "status": "measured",
+        "mean_ms": 2.41,
+        "stddev_ms": 0.18
+      },
+      "cgcc3": {
+        "status": "measured",
+        "mean_ms": 2.51,
+        "stddev_ms": 0.08
+      },
+      "cclang": {
+        "status": "measured",
+        "mean_ms": 2.36,
+        "stddev_ms": 0.2
+      },
+      "cmap": {
+        "status": "measured",
+        "mean_ms": 5.41,
+        "stddev_ms": 0.45
+      },
+      "rust": {
+        "status": "measured",
+        "mean_ms": 13.81,
+        "stddev_ms": 1.22
+      },
+      "haskell": {
+        "status": "measured",
+        "mean_ms": 6.59,
+        "stddev_ms": 0.41
+      },
+      "ocaml": {
+        "status": "measured",
+        "mean_ms": 4.8,
+        "stddev_ms": 0.57
+      },
+      "osprey": {
+        "status": "absent"
+      },
+      "c3": {
+        "status": "absent"
+      },
+      "odin": {
+        "status": "absent"
+      },
+      "mojo": {
+        "status": "absent"
+      },
+      "bend": {
+        "status": "measured",
+        "mean_ms": 3.36,
+        "stddev_ms": 0.27
+      },
+      "bend-par": {
+        "status": "measured",
+        "mean_ms": 5.4,
+        "stddev_ms": 0.13
+      }
+    }
+  }
+}
