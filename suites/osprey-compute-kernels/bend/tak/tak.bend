@@ -1,7 +1,10 @@
-# tak — Takeuchi tak(32,16,8). Faithful oracle-gated port.
-# Idiomatic Bend: the three independent argument recursions use parallel call
-# notation. The dependent outer recurrence remains sequential. @unsafe remains
-# mandatory because tak's nested self-call is outside Bend's termination proof.
+# tak — Takeuchi tak(32,16,8). Faithful port of reference/cases/tak
+# (oracle 9). TWO forced encodings: (1) @unsafe — Bend's mandatory
+# termination checker rejects tak's nested self-call (a computed first
+# arg can never be a match-exposed smaller part), so this def sits
+# OUTSIDE Bend's proof guarantees; (2) the x>y guard is hoisted to a
+# leading `c` parameter because match may only scrutinize a parameter,
+# never a computed value. Same recurrence, same oracle.
 
 import Base
 
@@ -11,7 +14,9 @@ def tak(+c: Bool, +x: Nat, +y: Nat, +z: Nat) -> Nat:
     case False{}:
       z
     case True{}:
-      +t1 +t2 +t3 = tak(Nat.is_gt(Nat.sub(x,1n), y), Nat.sub(x,1n), y, z) tak(Nat.is_gt(Nat.sub(y,1n), z), Nat.sub(y,1n), z, x) tak(Nat.is_gt(Nat.sub(z,1n), x), Nat.sub(z,1n), x, y)
+      +t1 = tak(Nat.is_gt(Nat.sub(x,1n), y), Nat.sub(x,1n), y, z)
+      +t2 = tak(Nat.is_gt(Nat.sub(y,1n), z), Nat.sub(y,1n), z, x)
+      +t3 = tak(Nat.is_gt(Nat.sub(z,1n), x), Nat.sub(z,1n), x, y)
       tak(Nat.is_gt(t1,t2), t1, t2, t3)
 
 def main() -> IO(Unit):

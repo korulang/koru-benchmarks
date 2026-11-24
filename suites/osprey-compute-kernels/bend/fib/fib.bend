@@ -1,7 +1,7 @@
-# fib — naive recursive Fibonacci, fib(35). Faithful oracle-gated port.
-# Idiomatic Bend: independent tree recursion is written with Bend's parallel
-# call notation. No memoization or algebraic shortcut; both recursive branches
-# are still evaluated.
+# fib — naive recursive Fibonacci, fib(35). Faithful port of
+# reference/cases/fib (oracle 9227465). Sequential: nested match exposes
+# n-1 and n-2; +n keeps the scrutinee reusable so `match p` doesn't
+# consume it. Checks clean (no @unsafe).
 
 import Base
 
@@ -14,7 +14,8 @@ def fib(+n: Nat) -> Nat:
         case 0n:
           1n
         case 1n+pp:
-          a b = fib(p) fib(pp)
+          a = fib(p)
+          b = fib(pp)
           Nat.add(a, b)
 
 def main() -> IO(Unit):
