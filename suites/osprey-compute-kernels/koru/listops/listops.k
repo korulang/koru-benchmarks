@@ -10,7 +10,9 @@
 //   a std/grid of 4000 i64 — the same flat shape as the reference
 //   ports, overwritten per iteration, no structural persistence.
 // - sum/below are linear folds over the grid, matching the reference's
-//   two traversals.
+//   two traversals. The fold accumulates acc+v+(v<500) unmodded and takes
+//   one @rem at the end — the reference's accumulate-then-mod strategy;
+//   per-element @rem was 64k extra i64 divisions the C port never pays.
 // - KNOWN GAP (same as textstats/exprtree): mode "1" draws a
 //   crypto-random seed; Koru stdlib has no random builtin, so nonzero
 //   seeds pass through unchanged. Mode 1 is never oracle-checked.
@@ -51,5 +53,6 @@ capture { seed: 1[i64] }
             |> for(0..4000)
                 ! each i |> hash-at(a.s, i: @as(i64, @intCast(i))): h |> std/grid:stored { xs[@as(usize, @intCast(i))].v: @rem(h, 1000) }: _
             |> for(0..4000)
-                ! each i |> captured { acc: @rem(@rem(a.acc + xs[@as(usize, @intCast(i))].v, 1000000007) + @as(i64, @intFromBool(xs[@as(usize, @intCast(i))].v < 500)), 1000000007) }
-    | captured res |> std/io:print.ln("{{ res.acc:d }}")
+                ! each i |> captured { acc: a.acc + xs[@as(usize, @intCast(i))].v + @as(i64, @intFromBool(xs[@as(usize, @intCast(i))].v < 500)) }
+    | captured res |> captured { acc: @rem(res.acc, 1000000007) }
+    | captured resm |> std/io:print.ln("{{ resm.acc:d }}")
