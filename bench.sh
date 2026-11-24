@@ -125,6 +125,12 @@ build_lang() {
 }
 
 LANGS=(koru koru-fold koru-par c cgcc3 cclang cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
+# Compiled-contender field — only these are built and timed; blowout
+# languages are never invoked. Everything else in LANGS still gets a column
+# but reports NOT-RUN, distinguishable from ABSENT (an in-field toolchain
+# that is missing). KORU_BENCH_FIELD="a b c" overrides the field.
+FIELD=( ${KORU_BENCH_FIELD:-koru koru-fold koru-par c cgcc3 cclang rust osprey bend} )
+in_field() { local f; for f in "${FIELD[@]}"; do [ "$f" = "$1" ] && return 0; done; return 1; }
 printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p c gcc3 clang cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
 printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "------" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
 
@@ -139,6 +145,11 @@ for casedir in "$SUITE"/reference/cases/*/; do
 
   declare -A ms=()
   for lang in "${LANGS[@]}"; do
+    if ! in_field "$lang"; then
+      ms[$lang]="NOT-RUN"
+      printf '%s\t%s\tnot-run\t\t\n' "$name" "$lang" >> "$ROWS"
+      continue
+    fi
     bin="$TMP/$name.$lang"
     if build_lang "$lang" "$name" "$bin"; then
       actual="$("$bin" <"$STDIN0" 2>/dev/null | tr -d '[:space:]')"
@@ -172,7 +183,7 @@ done
 
 echo
 echo "Values are mean wall-clock milliseconds (hyperfine -N, warmup $WARMUP, min-runs $MINRUNS) on this machine."
-echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but failed the oracle (excluded)."
+echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but failed the oracle (excluded) · 'NOT-RUN' = outside the compiled-contender field (KORU_BENCH_FIELD)."
 
 # Persist the board as a provenance-carrying artifact (results/latest.json).
 # Only a FULL run writes it — a filtered run is a partial board and must never
