@@ -55,6 +55,22 @@ if [ -z "${BEND:-}" ]; then
   fi
 fi
 bend_ok() { [ -n "$BEND" ] && [ -x "$BEND" ]; }
+bend_version() {
+  bend_ok || { echo ABSENT; return; }
+  local out rc clean version
+  out="$(BEND_NO_TELEMETRY=1 "$BEND" version 2>/dev/null)"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    out="$(BEND_NO_TELEMETRY=1 "$BEND" --version 2>/dev/null)"; rc=$?
+  fi
+  [ "$rc" -eq 0 ] || { echo "bend (version probe failed)"; return; }
+  clean="$(printf '%s\n' "$out" | tr -d '\033' | sed 's/\[[0-9;]*m//g')"
+  version="$(printf '%s\n' "$clean" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ -n "$version" ]; then
+    echo "bend $version"
+  else
+    echo "bend (version unparsed: $(printf '%s\n' "$clean" | head -1))"
+  fi
+}
 
 echo "Machine: $(uname -sm) · koruc: $KORUC"
 printf 'Toolchains: koru=present  c=%s  cgcc3=%s  cclang=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
@@ -224,7 +240,7 @@ if [ -z "$FILTER" ]; then
   C3C_VERSION="$( (command -v c3c >/dev/null 2>&1 && c3c --version || "$HOME/src/c3/c3c" --version) 2>/dev/null | head -1 || echo ABSENT)" \
   ODIN_VERSION="$( (command -v odin >/dev/null 2>&1 && odin version || "$HOME/src/odin/odin" version) 2>/dev/null | head -1 || echo ABSENT)" \
   MOJO_VERSION="$(mojo_ok && ("$PIXI" run --manifest-path "$MOJO_MANIFEST" mojo --version 2>/dev/null | head -1 || echo "mojo (version unknown)") || echo ABSENT)" \
-  BEND_VERSION="$(bend_ok && (BEND_NO_TELEMETRY=1 "$BEND" --version 2>/dev/null | tr -d '\033' | sed 's/\[[0-9;]*m//g' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^/bend /' || echo "bend (version unknown)") || echo ABSENT)" \
+  BEND_VERSION="$(bend_version)" \
   python3 - <<'PYEOF'
 import json, os
 
@@ -240,6 +256,11 @@ for line in open(os.environ["ROWS_FILE"]):
     rows.setdefault(kernel, {})[lang] = cell
     if lang not in langs_seen:
         langs_seen.append(lang)
+
+if os.environ.get("BOARD_CLASS") == "quiet-rig":
+    discipline = "MEASURED on the dedicated-vCPU benchmark rig named above under BOARD_CLASS=quiet-rig, with no intentional co-run workload; machine.load_avg is the 1/5/15-min load at persist time and includes the benchmark/build workload itself. Read every number as a same-machine, same-protocol measurement under the recorded toolchains. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules."
+else:
+    discipline = "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules."
 
 out = {
     "suite": "osprey-compute-kernels",
@@ -289,7 +310,7 @@ out = {
         "bend": os.environ["BEND_VERSION"],
         "bend-par": os.environ["BEND_VERSION"],
     },
-    "discipline": "MEASURED on the shared developer workstation named above, under live load (see machine.load_avg — the 1/5/15-min load average at run time) — NOT a quiesced benchmark rig. Read every number as a same-machine, same-protocol ballpark, not a precise cross-language ranking: run-to-run jitter on a loaded box routinely exceeds the gaps between the compiled languages. Wrong-answer binaries are excluded from timing. Absent toolchains are reported absent, never estimated. No cross-language claim leaves this board unless re-verified under the target's exact rules.",
+    "discipline": discipline,
     "langs": langs_seen,
     "kernels": rows,
 }
