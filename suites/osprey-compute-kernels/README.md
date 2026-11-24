@@ -97,6 +97,28 @@ through current `koruc` and matches its oracle):
   cheat-C (2.0 ms). Faithfulness note: it is not a changed algorithm — it is
   the map the oracle's own structure hides.
 
+## Comparator fidelity notes
+
+The generated board labels implementation-protocol artifacts directly on the
+cells they qualify. Sweep of all 22 C references (2026-11-24):
+
+- **`wordfreq`** — fixed-array `counts[hash % 8]`, no string-keyed map. C cells
+  are `memory-protocol-artifact`; **`cmap`** is the like-for-like comparator.
+- **`binarytrees`** — malloc/free per node versus arena-backed ports. C cells
+  are `memory-protocol-artifact`; **`carena`** is the like-for-like comparator.
+- **`listops`** — metadata names a persistent `List<int>`, but C uses a fixed
+  contiguous array, Rust `Vec`, and OCaml `Array`. Those cells are
+  `data-structure-protocol-artifact`; no persistent-list C comparator exists
+  on the board yet.
+- **`exprtree`** — C heap-allocates nodes but never frees them, so recursive
+  teardown cost is absent. C cells are `memory-lifecycle-artifact`.
+- The other 18 C references show no fixed-array shortcut relative to their
+  stated scalar/string workload. `textstats`' fixed vocab is input storage,
+  not a skipped data structure.
+
+These are comparator labels, not verdicts: measured artifact cells stay on the
+board, but a reader can no longer mistake them for like-for-like comparisons.
+
 ## The `koru-fold` column
 
 `koru-fold` is the flat fold / algebraic-identity variant of a kernel — the

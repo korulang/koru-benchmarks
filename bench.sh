@@ -261,8 +261,12 @@ for line in open(os.environ["ROWS_FILE"]):
     for c_lang in ("c", "cgcc3", "cclang"):
         comparator_notes[("wordfreq", c_lang)] = ("memory-protocol-artifact", "corner-cut memory protocol: counts into a fixed array by hash slot and never builds a string-keyed map; compare wordfreq with cmap, not this cell, for like-for-like C")
         comparator_notes[("binarytrees", c_lang)] = ("memory-protocol-artifact", "per-node malloc/free memory protocol; compare binarytrees with carena, not this cell, for arena-backed like-for-like C")
+        comparator_notes[("exprtree", c_lang)] = ("memory-lifecycle-artifact", "heap-allocates every expression node but never frees the tree; unlike managed/reference implementations, recursive teardown cost is absent")
+        comparator_notes[("listops", c_lang)] = ("data-structure-protocol-artifact", "fixed contiguous array instead of the workload's persistent List<int>; not a like-for-like list-comparator cell")
     comparator_notes[("wordfreq", "cmap")] = ("like-for-like-memory-protocol", "hand-rolled chained string-keyed map")
     comparator_notes[("binarytrees", "carena")] = ("like-for-like-memory-protocol", "allocate-once backing store with bump allocation and per-iteration reset")
+    comparator_notes[("listops", "rust")] = ("data-structure-protocol-artifact", "contiguous Vec instead of the workload's persistent List<int>; not a like-for-like list-comparator cell")
+    comparator_notes[("listops", "ocaml")] = ("data-structure-protocol-artifact", "contiguous Array instead of the workload's persistent List<int>; not a like-for-like list-comparator cell")
     if (kernel, lang) in comparator_notes:
         cell["comparator_class"], cell["comparator_note"] = comparator_notes[(kernel, lang)]
     rows.setdefault(kernel, {})[lang] = cell
