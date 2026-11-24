@@ -45,6 +45,9 @@ union types become `std/grid` rows with preorder-arithmetic child indexes;
 the traversal chases the stored indexes so the tree materializes honestly.
 The disclosure is that allocation pressure (the kernel's nominal axis) is
 not measured — the arena is allocated once and overwritten per iteration.
+Board metadata therefore labels the malloc/free C columns
+`memory-protocol-artifact` and races a separate **`carena`** comparator
+(`binarytrees_arena.c`) for allocate-once like-for-like C.
 
 - `binarytrees` — **GREEN (SHOWN)** `19659600`. `{left,right}` arena,
   16383 rows per depth-13 tree, recursive `check` pointer-chase.

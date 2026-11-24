@@ -73,9 +73,9 @@ bend_version() {
 }
 
 echo "Machine: $(uname -sm) · koruc: $KORUC"
-printf 'Toolchains: koru=present  c=%s  cgcc3=%s  cclang=%s  cmap=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
+printf 'Toolchains: koru=present  c=%s  cgcc3=%s  cclang=%s  cmap=%s  carena=%s  rust=%s  haskell=%s  ocaml=%s  osprey=%s  c3=%s  odin=%s  mojo=%s  bend=%s\n\n' \
   "$(have cc && echo present || echo ABSENT)" "$(gcc_ok && echo present || echo ABSENT)" \
-  "$(clang_ok && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
+  "$(clang_ok && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" "$(have cc && echo present || echo ABSENT)" \
   "$(have rustc && echo present || echo ABSENT)" "$(have ghc && echo present || echo ABSENT)" \
   "$(have ocamlopt && echo present || echo ABSENT)" "$([ -n "$OSPREY" ] && [ -x "$OSPREY" ] && echo present || echo ABSENT)" \
   "$(command -v c3c >/dev/null 2>&1 || [ -x "$HOME/src/c3/c3c" ] && echo present || echo ABSENT)" \
@@ -109,6 +109,7 @@ build_lang() {
     cgcc3)   gcc_ok      && [ -f "$cdir/$name.c" ]  && gcc -O3 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     cclang)  clang_ok    && [ -f "$cdir/$name.c" ]  && clang -O3 -o "$out" "$cdir/$name.c" 2>/dev/null ;;
     cmap)     [ -f "$cdir/$name.map.c" ] && cc -O2 -o "$out" "$cdir/$name.map.c" 2>/dev/null ;;
+    carena)   [ -f "$cdir/${name}_arena.c" ] && cc -O2 -o "$out" "$cdir/${name}_arena.c" 2>/dev/null ;;
     rust)    have rustc  && [ -f "$cdir/$name.rs" ] && rustc -C opt-level=3 -C overflow-checks=off -o "$out" "$cdir/$name.rs" 2>/dev/null ;;
     haskell) have ghc    && [ -f "$cdir/$name.hs" ] && ghc -O2 -outputdir "$TMP/hs_$name" -o "$out" "$cdir/$name.hs" >/dev/null 2>&1 ;;
     # ocaml/osprey build commands mirror the vendored reference/osprey_run.sh
@@ -140,14 +141,14 @@ build_lang() {
   esac
 }
 
-LANGS=(koru koru-fold koru-par c cgcc3 cclang cmap rust haskell ocaml osprey c3 odin mojo bend bend-par)
+LANGS=(koru koru-fold koru-par c cgcc3 cclang cmap carena rust haskell ocaml osprey c3 odin mojo bend bend-par)
 # Compiled-contender field — only these are built and timed; blowout
 # languages are never invoked. Everything else in LANGS still gets a column
 # but reports NOT-RUN, distinguishable from ABSENT (an in-field toolchain
 # that is missing). KORU_BENCH_FIELD="a b c" overrides the field.
-FIELD=( ${KORU_BENCH_FIELD:-koru koru-fold koru-par c cmap cgcc3 cclang rust osprey bend} )
+FIELD=( ${KORU_BENCH_FIELD:-koru koru-fold koru-par c cmap carena cgcc3 cclang rust osprey bend} )
 in_field() { local f; for f in "${FIELD[@]}"; do [ "$f" = "$1" ] && return 0; done; return 1; }
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p c gcc3 clang cmap rust haskell ocaml osprey c3 odin mojo bend bend-p
+printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p c gcc3 clang cmap c-arena rust haskell ocaml osprey c3 odin mojo bend bend-p
 printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "------" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
 
 # The board is driven by reference/cases (the complete 22-kernel list), not by
@@ -193,7 +194,7 @@ for casedir in "$SUITE"/reference/cases/*/; do
     fi
   done
   printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[carena]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
   unset ms
 done
 
@@ -253,6 +254,17 @@ for line in open(os.environ["ROWS_FILE"]):
     if status == "measured":
         cell["mean_ms"] = float(mean)
         cell["stddev_ms"] = float(std)
+    # Comparator honesty labels live on the cells they qualify. A corner-cut
+    # reference is still measured, but it is a memory/workload-protocol artifact,
+    # not a like-for-like language comparator.
+    comparator_notes = {}
+    for c_lang in ("c", "cgcc3", "cclang"):
+        comparator_notes[("wordfreq", c_lang)] = ("memory-protocol-artifact", "corner-cut memory protocol: counts into a fixed array by hash slot and never builds a string-keyed map; compare wordfreq with cmap, not this cell, for like-for-like C")
+        comparator_notes[("binarytrees", c_lang)] = ("memory-protocol-artifact", "per-node malloc/free memory protocol; compare binarytrees with carena, not this cell, for arena-backed like-for-like C")
+    comparator_notes[("wordfreq", "cmap")] = ("like-for-like-memory-protocol", "hand-rolled chained string-keyed map")
+    comparator_notes[("binarytrees", "carena")] = ("like-for-like-memory-protocol", "allocate-once backing store with bump allocation and per-iteration reset")
+    if (kernel, lang) in comparator_notes:
+        cell["comparator_class"], cell["comparator_note"] = comparator_notes[(kernel, lang)]
     rows.setdefault(kernel, {})[lang] = cell
     if lang not in langs_seen:
         langs_seen.append(lang)
@@ -287,7 +299,8 @@ out = {
             "haskell": "ghc -O2",
             "ocaml": "ocamlopt -O3 -unsafe",
             "osprey": "osprey --compile (release)",
-            "cmap": "cc -O2 (hand-rolled string map)",
+            "cmap": "cc -O2 (hand-rolled string map — like-for-like wordfreq comparator)",
+            "carena": "cc -O2 (allocate-once arena — like-for-like binarytrees comparator)",
             "c3": "c3c compile -O5",
             "odin": "odin build -o:speed",
             "mojo": "mojo build (default -O3)",
@@ -304,6 +317,7 @@ out = {
         "ocaml": os.environ["OCAML_VERSION"],
         "osprey": os.environ["OSPREY_VERSION"],
         "cmap": os.environ["CC_VERSION"],
+        "carena": os.environ["CC_VERSION"],
         "c3": os.environ["C3C_VERSION"],
         "odin": os.environ["ODIN_VERSION"],
         "mojo": os.environ["MOJO_VERSION"],
