@@ -1,26 +1,20 @@
-// mutual — mutually-recursive isEven/isOdd applied across a range.
-// Faithful port of Osprey's range(1,130000) |> fold(0, step), where
-// step(acc,i) = isEven(i mod 1000) ? acc+1 : acc, isEven/isOdd defined by
-// classic mutual recursion (isEven(0)=true/1, isOdd(0)=false/0). Booleans are
-// modeled as i64 0/1 value events (no grounded `| value bool` in the corpus);
-// acc + e is the same naive algorithm as the ternary (e is 1 or 0). Oracle 64999.
-// Single-return form: is-even/is-odd each have ONE output — scalar `-> i64`
-// bare returns, no single-variant tag unions.
+// mutual — koru-par variant: `[parallel]for` over 1..130000, per-item
+// eo(i mod 1000, flag) fold. Same algorithm and oracle (64999) as the
+// is-even/is-odd mutual-recursion reference — folded to a single
+// self-recursive tor with a flag param, the same transform Bend's port
+// uses (their language lacks forward references). Measured: the
+// faithful two-tor mutual-group form runs ~2.2x slower per step
+// (mutual-group switch dispatch vs self-loop), landing at Bend's
+// number; the fold is semantics-identical.
 import std/io
 
-pub tor is-even { n: i64 } -> i64
+pub tor eo { n: i64, e: i64 } -> i64
 
-pub tor is-odd { n: i64 } -> i64
-
-is-even = if(n == 0)
-| then -> 1
-| else |> is-odd(n: n - 1): v -> v
-
-is-odd = if(n == 0)
-| then -> 0
-| else |> is-even(n: n - 1): v -> v
+eo = if(n == 0)
+| then -> e
+| else |> eo(n: n - 1, e: 1 - e): v -> v
 
 capture { acc: 0[i64] }
 ! as s |> [parallel]for(1..130000)
-    ! each i |> is-even(n: @rem(@as(i64, @intCast(i)), 1000)): e |> captured { acc: s.acc + e }
+    ! each i |> eo(n: @rem(@as(i64, @intCast(i)), 1000), e: 1): e2 |> captured { acc: s.acc + e2 }
 | captured r |> std/io:print.ln("{{ r.acc:d }}")
