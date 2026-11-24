@@ -89,6 +89,15 @@ RUN set -eux; \
     /opt/koru/zig-out/bin/koruc --version || true
 ENV KORUC=/opt/koru/zig-out/bin/koruc
 
+# Bend 2 — the comparison column this board exists for. Self-updating
+# launcher under ~/.bend (its documented installer); bench.sh finds it at
+# $HOME/.bend/bin/bend and compiles its C output with the gcc above.
+# REQUIRED, not best-effort like Osprey: a board without Bend is not the
+# board — fail the build rather than ship a silent ABSENT column.
+RUN set -eux; \
+    curl -fsSL https://bend-lang.com/install.sh | sh; \
+    /root/.bend/bin/bend --version || true
+
 # The benchmark suite itself — copied last (changes most often).
 WORKDIR /bench
 COPY . /bench
