@@ -99,7 +99,7 @@ trap '[ "${KEEP:-0}" = 1 ] || { echo "▶ destroying server $ID"; auth -X DELETE
 
 echo "▶ server $ID — waiting for IP + SSH (docker-ce cloud-init can take minutes) …"
 ok=0; IP=""
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
   if [ -z "$IP" ]; then
     IP="$(auth "$API/servers/$ID" | python3 -c 'import json,sys; print(json.load(sys.stdin)["server"]["public_net"]["ipv4"]["ip"])' 2>/dev/null || true)"
     [ -z "$IP" ] && { sleep 5; continue; }
