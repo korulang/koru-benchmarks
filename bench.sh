@@ -93,6 +93,12 @@ build_lang() {
       [ -n "$ksrc" ] || return 1
       local w="$TMP/k_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$ksrc" "$w/"
       ( cd "$w" && "$KORUC" build --release=fast "$ksrc" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
+    koru-aos|koru-soa)
+      local kdir="$SUITE/$lang/$name"; local ksrc=""
+      [ -f "$kdir/$name.kz" ] && ksrc="$name.kz"; [ -f "$kdir/$name.k" ] && ksrc="$name.k"
+      [ -n "$ksrc" ] || return 1
+      local w="$TMP/kv_${lang}_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$ksrc" "$w/"
+      ( cd "$w" && "$KORUC" build --release=fast "$ksrc" >/dev/null 2>&1 ) && [ -x "$w/a.out" ] && mv -f "$w/a.out" "$out" ;;
     koru-fold)
       local kdir="$SUITE/koru-fold/$name"; [ -f "$kdir/$name.k" ] || return 1
       local w="$TMP/kf_$name"; rm -rf "$w"; mkdir -p "$w"; cp "$kdir/$name.k" "$w/"
@@ -137,19 +143,91 @@ build_lang() {
       bend_ok && [ -f "$SUITE/bend-par/$name/$name.bend" ] || return 1
       local bw="$TMP/bp_$name"; rm -rf "$bw"; mkdir -p "$bw"; cp "$SUITE/bend-par/$name/$name.bend" "$bw/"
       ( cd "$bw" && BEND_NO_TELEMETRY=1 "$BEND" "$name.bend" -o "$name" >/dev/null 2>&1 ) && [ -x "$bw/$name" ] && mv -f "$bw/$name" "$out" ;;
+    bend-idiomatic)
+      bend_ok && [ -f "$SUITE/bend-idiomatic/$name/$name.bend" ] || return 1
+      local bw="$TMP/bi_$name"; rm -rf "$bw"; mkdir -p "$bw"; cp "$SUITE/bend-idiomatic/$name/$name.bend" "$bw/"
+      ( cd "$bw" && BEND_NO_TELEMETRY=1 "$BEND" "$name.bend" -o "$name" >/dev/null 2>&1 ) && [ -x "$bw/$name" ] && mv -f "$bw/$name" "$out" ;;
+    cexpert) have cc && [ -f "$cdir/$name.expert.c" ] && cc -O3 -o "$out" "$cdir/$name.expert.c" 2>/dev/null ;;
     *) return 1 ;;
   esac
 }
 
-LANGS=(koru koru-fold koru-par c cgcc3 cclang cmap carena rust haskell ocaml osprey c3 odin mojo bend bend-par)
+LANGS=(koru koru-aos koru-soa koru-fold koru-par c cgcc3 cclang cmap carena cexpert rust haskell ocaml osprey c3 odin mojo bend bend-par bend-idiomatic)
 # Compiled-contender field — only these are built and timed; blowout
 # languages are never invoked. Everything else in LANGS still gets a column
 # but reports NOT-RUN, distinguishable from ABSENT (an in-field toolchain
 # that is missing). KORU_BENCH_FIELD="a b c" overrides the field.
-FIELD=( ${KORU_BENCH_FIELD:-koru koru-fold koru-par c cmap carena cgcc3 cclang rust osprey bend} )
+FIELD=( ${KORU_BENCH_FIELD:-koru koru-aos koru-soa koru-fold koru-par c cmap carena cexpert cgcc3 cclang rust osprey bend bend-idiomatic} )
 in_field() { local f; for f in "${FIELD[@]}"; do [ "$f" = "$1" ] && return 0; done; return 1; }
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' kernel koru koru-f koru-p c gcc3 clang cmap c-arena rust haskell ocaml osprey c3 odin mojo bend bend-p
-printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "------" "----" "-----" "------" "-" "----" "-----" "----" "----" "-------" "-----" "------" "--" "----" "----" "----" "------"
+
+# ── Build-mode provenance ──────────────────────────────────────────────────
+# Every timed binary carries the mode the harness itself passed at compile
+# time (BM_MODE) plus HOW that mode is proven (BM_EV). Self-reported flags
+# are metadata; binary evidence is the gate.
+#
+#   * zig-produced binaries (koru*): POSITIVE BINARY INSPECTION. koruc hides
+#     a Debug default behind its flags (koru_std/compiler.materialize-build
+#     .kz — "The OUTPUT binary defaults to Debug"), so the command line is
+#     not proof the binary is what the flag claims. Safety-checked zig
+#     builds (Debug, ReleaseSafe) embed compiler panic strings — "index out
+#     of bounds", "integer overflow", "reached unreachable code";
+#     ReleaseFast/ReleaseSmall compile them out. zig_mode_verify() greps
+#     the binary; a koru binary that cannot prove its mode is UNVERIFIED,
+#     loudly excluded, never timed. Measured 2026-11-25 on fib.a.out:
+#     Debug=4 hits, ReleaseSafe=3, ReleaseFast=0.
+#     (Cannot split Debug from ReleaseSafe mechanically — both keep safety
+#     checks; the harness only claims ReleaseFast for koru anyway.)
+#   * everything else: single-hop compile-command provenance — the harness
+#     invoked the compiler directly this run; there is no hidden default
+#     layer between flag and binary. The exact command is stamped per row.
+declare -A BM_MODE=(
+  [koru]="ReleaseFast" [koru-aos]="ReleaseFast" [koru-soa]="ReleaseFast"
+  [koru-fold]="ReleaseFast" [koru-par]="ReleaseFast"
+  [c]="O2" [cgcc3]="O3" [cclang]="O3" [cmap]="O2" [carena]="O2"
+  [rust]="opt-level=3" [haskell]="O2" [ocaml]="O3-unsafe"
+  [osprey]="release" [c3]="O5" [odin]="o:speed" [mojo]="O3-default"
+  [bend]="native-via-clang" [bend-par]="native-via-clang" [bend-idiomatic]="native-via-clang" [cexpert]="O3"
+)
+declare -A BM_CMD=(
+  [koru]="koruc build --release=fast" [koru-aos]="koruc build --release=fast"
+  [koru-soa]="koruc build --release=fast" [koru-fold]="koruc build --release=fast"
+  [koru-par]="koruc build --release=fast"
+  [c]="cc -O2" [cgcc3]="gcc -O3" [cclang]="clang -O3"
+  [cmap]="cc -O2" [carena]="cc -O2"
+  [rust]="rustc -C opt-level=3 -C overflow-checks=off"
+  [haskell]="ghc -O2" [ocaml]="ocamlopt -O3 -unsafe" [osprey]="osprey --compile"
+  [c3]="c3c compile -O5" [odin]="odin build -o:speed" [mojo]="mojo build"
+  [bend]="bend build (native via clang/BendRT)" [bend-par]="bend build (native via clang/BendRT)"
+  [bend-idiomatic]="bend build (native via clang/BendRT)" [cexpert]="cc -O3"
+)
+
+# Count compiler safety-check panic strings embedded in a zig binary.
+# Always exits 0; an unreadable/missing file still prints 0, so callers
+# must check readability themselves before trusting a zero.
+zig_safety_hits() {
+  grep -aoE 'index out of bounds|integer overflow|reached unreachable code' "$1" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# zig_mode_verify <binary> <claimed-mode> -> 0 proven, 1 unverified/mismatch.
+# Evidence is the binary itself, never the flag that produced it.
+zig_mode_verify() {
+  local bin="$1" want="$2" hits
+  [ -f "$bin" ] && [ -r "$bin" ] || return 1
+  command -v grep >/dev/null 2>&1 || return 1
+  hits="$(zig_safety_hits "$bin")"
+  case "$want" in
+    Debug|ReleaseSafe)        [ -n "$hits" ] && [ "$hits" -gt 0 ] 2>/dev/null ;;
+    ReleaseFast|ReleaseSmall) [ "$hits" = "0" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+printf '%-12s' kernel
+for lang in "${LANGS[@]}"; do printf '%10s' "$lang"; done
+printf '\n'
+printf '%-12s' '------'
+for lang in "${LANGS[@]}"; do printf '%10s' '------'; done
+printf '\n'
 
 # The board is driven by reference/cases (the complete 22-kernel list), not by
 # the koru/ ports — a kernel Koru can't express yet must still show its row so
@@ -164,11 +242,26 @@ for casedir in "$SUITE"/reference/cases/*/; do
   for lang in "${LANGS[@]}"; do
     if ! in_field "$lang"; then
       ms[$lang]="NOT-RUN"
-      printf '%s\t%s\tnot-run\t\t\n' "$name" "$lang" >> "$ROWS"
+      printf '%s\t%s\tnot-run\t\t\tn/a\tnot-built\n' "$name" "$lang" >> "$ROWS"
       continue
     fi
     bin="$TMP/$name.$lang"
+    bm="${BM_MODE[$lang]:-UNVERIFIED}"; bev="compile-command"; bcmd="${BM_CMD[$lang]:-}"
     if build_lang "$lang" "$name" "$bin"; then
+      # Build-mode gate: zig binaries must PROVE their mode from the binary
+      # itself. Failure is loud and the binary is never oracle-checked or
+      # timed — an unproven mode is not a slower number, it is no number.
+      if [[ "$lang" == koru* ]]; then
+        if zig_mode_verify "$bin" "$bm"; then
+          bev="binary-inspection:safety-strings=$(zig_safety_hits "$bin")"
+        else
+          printf '  UNVERIFIED-MODE %-12s %-9s claimed=%s cmd=%s — excluded from timing\n' \
+            "$name" "$lang" "$bm" "$bcmd" >&2
+          ms[$lang]="UNVER"
+          printf '%s\t%s\tunverified\t\t\tUNVERIFIED\tbinary-inspection-failed\n' "$name" "$lang" >> "$ROWS"
+          continue
+        fi
+      fi
       actual="$("$bin" <"$STDIN0" 2>/dev/null | tr -d '[:space:]')"
       if [ "$actual" = "$oracle" ]; then
         if hyperfine -N --input "$STDIN0" --warmup "$WARMUP" --min-runs "$MINRUNS" \
@@ -177,30 +270,31 @@ for casedir in "$SUITE"/reference/cases/*/; do
           read -r mean_ms std_ms < <(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"][0]; print("%.2f %.2f" % (r["mean"]*1000, r["stddev"]*1000))' "$TMP/hf.json" 2>/dev/null) || true
           if [ -n "${mean_ms:-}" ]; then
             ms[$lang]="$(printf '%.1f' "$mean_ms")"
-            printf '%s\t%s\tmeasured\t%s\t%s\n' "$name" "$lang" "$mean_ms" "$std_ms" >> "$ROWS"
+            printf '%s\t%s\tmeasured\t%s\t%s\t%s\t%s\n' "$name" "$lang" "$mean_ms" "$std_ms" "$bm" "$bev" >> "$ROWS"
           else
-            ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\n' "$name" "$lang" >> "$ROWS"
+            ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\t%s\t%s\n' "$name" "$lang" "$bm" "$bev" >> "$ROWS"
           fi
         else
-          ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\n' "$name" "$lang" >> "$ROWS"
+          ms[$lang]="hf-err"; printf '%s\t%s\therror\t\t\t%s\t%s\n' "$name" "$lang" "$bm" "$bev" >> "$ROWS"
         fi
       else
         ms[$lang]="WRONG"   # built but wrong answer — excluded from timing
-        printf '%s\t%s\twrong\t\t\n' "$name" "$lang" >> "$ROWS"
+        printf '%s\t%s\twrong\t\t\t%s\t%s\n' "$name" "$lang" "$bm" "$bev" >> "$ROWS"
       fi
     else
       ms[$lang]="—"          # toolchain/source absent or build failed
-      printf '%s\t%s\tabsent\t\t\n' "$name" "$lang" >> "$ROWS"
+      printf '%s\t%s\tabsent\t\t\tn/a\tbuild-failed-or-absent\n' "$name" "$lang" >> "$ROWS"
     fi
   done
-  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n' "$name" \
-    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[carena]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}"
+  printf '%-12s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s
+' "$name" \
+    "${ms[koru]:-—}" "${ms[koru-fold]:-—}" "${ms[koru-par]:-—}" "${ms[c]:-—}" "${ms[cgcc3]:-—}" "${ms[cclang]:-—}" "${ms[cmap]:-—}" "${ms[carena]:-—}" "${ms[cexpert]:-—}" "${ms[rust]:-—}" "${ms[haskell]:-—}" "${ms[ocaml]:-—}" "${ms[osprey]:-—}" "${ms[c3]:-—}" "${ms[odin]:-—}" "${ms[mojo]:-—}" "${ms[bend]:-—}" "${ms[bend-par]:-—}" "${ms[bend-idiomatic]:-—}"
   unset ms
 done
 
 echo
 echo "Values are mean wall-clock milliseconds (hyperfine -N, warmup $WARMUP, min-runs $MINRUNS) on this machine."
-echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but failed the oracle (excluded) · 'NOT-RUN' = outside the compiled-contender field (KORU_BENCH_FIELD)."
+echo "'—' = toolchain/source absent or build failed · 'WRONG' = built but failed the oracle (excluded) · 'UNVER' = build mode not proven by binary inspection (excluded, never timed) · 'NOT-RUN' = outside the compiled-contender field (KORU_BENCH_FIELD)."
 
 # Persist the board as a provenance-carrying artifact (results/latest.json).
 # Only a FULL run writes it — a filtered run is a partial board and must never
@@ -249,8 +343,12 @@ rows = {}
 langs_seen = []
 for line in open(os.environ["ROWS_FILE"]):
     parts = line.rstrip("\n").split("\t")
-    kernel, lang, status, mean, std = (parts + ["", ""])[:5]
+    kernel, lang, status, mean, std, bmode, bev = (parts + [""] * 7)[:7]
     cell = {"status": status}
+    if bmode and bmode != "n/a":
+        cell["build_mode"] = bmode
+    if bev:
+        cell["build_evidence"] = bev
     if status == "measured":
         cell["mean_ms"] = float(mean)
         cell["stddev_ms"] = float(std)
@@ -292,8 +390,11 @@ out = {
         "tool": "hyperfine -N",
         "warmup": int(os.environ["WARMUP"]),
         "min_runs": int(os.environ["MINRUNS"]),
+        "build_mode_policy": "every timed binary carries build_mode (the mode the harness passed at compile time) + build_evidence. zig/koru binaries are proven by binary inspection — safety-check panic strings must be absent for ReleaseFast/Small, present for Debug/ReleaseSafe; a binary that cannot prove its mode is status=unverified, excluded from all numbers, and logged UNVERIFIED-MODE. other toolchains carry single-hop compile-command provenance (the harness invoked the compiler directly this run; no hidden default layer).",
         "flags": {
             "koru": "koruc build (ReleaseFast)",
+            "koru-aos": "koruc build (ReleaseFast) — array-of-structs layout variant",
+            "koru-soa": "koruc build (ReleaseFast) — struct-of-arrays layout variant",
             "koru-fold": "koruc build (ReleaseFast) — flat fold/identity port",
             "koru-par": "koruc build (ReleaseFast) — [parallel]-annotated port (fold split / fork-join)",
             "c": "cc -O2",
@@ -310,6 +411,8 @@ out = {
             "mojo": "mojo build (default -O3)",
             "bend": "bend build → native via clang (BendRT)",
             "bend-par": "bend build → native via clang — parallel-fork variant",
+            "bend-idiomatic": "bend build → native via clang — idiomatic rewritten variant",
+            "cexpert": "cc -O3 — non-vendored expert comparator",
         },
     },
     "toolchains": {
@@ -326,6 +429,8 @@ out = {
         "odin": os.environ["ODIN_VERSION"],
         "mojo": os.environ["MOJO_VERSION"],
         "bend": os.environ["BEND_VERSION"],
+        "bend-idiomatic": os.environ["BEND_VERSION"],
+        "cexpert": "cc",
         "bend-par": os.environ["BEND_VERSION"],
     },
     "discipline": discipline,
